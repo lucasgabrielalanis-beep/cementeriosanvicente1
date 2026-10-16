@@ -1,6 +1,7 @@
 /*
- * Plano de la Sección Vieja (nichos): calles, pasajes, sectores, cuadros y bloques.
- * Lo pasó el dueño. Se usa solo en el sector "Sección Vieja (nichos)".
+ * Plano de la Sección Vieja: calles, pasajes, sectores, cuadros y bloques.
+ * Lo pasó el dueño. Se usa solo en el sector "Sección Vieja" de nichos (código SV_NICHOS).
+ * Ahí la ubicación se muestra sin la palabra "Nicho": "Cuadro O · Bloq. 19 · N° 12".
  * "Prop." se transcribe tal como figura en el plano.
  */
 "use strict";

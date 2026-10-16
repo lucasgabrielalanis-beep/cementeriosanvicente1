@@ -98,7 +98,7 @@ async function datosIniciales() {
     ["PAB_AMARILLO", "Pabellón Amarillo", "nichos", false],
     ["CENTRAL", "Central", "nichos", false],
     ["LATERAL", "Lateral", "nichos", false],
-    ["SV_NICHOS", "Sección Vieja (nichos)", "nichos", false],
+    ["SV_NICHOS", "Sección Vieja", "nichos", false],
   ].forEach(([codigo, nombre, tipo, corte], i) => zonas.push({ id: 31 + i, codigo, numero: null, nombre, tipo, corte }));
 
   const reglas = {
@@ -144,7 +144,7 @@ async function datosIniciales() {
   numerarEspacios(espacios, zonas);
 
   return {
-    version: 9,
+    version: 10,
     creado: new Date(ahora).toISOString(),
     usuarios, zonas, reglas,
     temporada: { desde: "11-01", hasta: "03-31", factor: 0.6 },
@@ -162,7 +162,7 @@ async function datosIniciales() {
 // Ubicación de cada nicho o fosa (datos de ejemplo; con la base real viene del padrón).
 // Zonas 1 a 30: zona → cuadro (1 a 40) → fosa. Resto: número dentro del sector.
 const MAX_CUADROS = 40;
-// Sección Vieja (nichos): cuadro y bloque según el plano (plano-seccion-vieja.js).
+// Sección Vieja (sector de nichos, código SV_NICHOS): cuadro y bloque según el plano (plano-seccion-vieja.js).
 function numerarEspacios(espacios, zonas) {
   const numerada = new Set(zonas.filter((z) => z.numero).map((z) => z.id));
   const seccionVieja = zonas.find((z) => z.codigo === "SV_NICHOS")?.id;
@@ -176,7 +176,8 @@ function numerarEspacios(espacios, zonas) {
     lista.sort((a, b) => a.id - b.id).forEach((e, i) => {
       e.numero = e.cuadro || e.lugar ? 1 + i * 3 + (e.id % 3) : 1 + i * 4 + (e.id % 4);
       if (e.tipo === "nicho" && !e.lugar) e.lugar = `Fila ${1 + ((e.numero - 1) % 5)}`;
-      e.ub = e.tipo === "nicho" ? `${e.lugar} · Nicho N° ${e.numero}`
+      // En la Sección Vieja la ubicación no lleva la palabra "Nicho" (pedido del dueño).
+      e.ub = e.tipo === "nicho" ? (e.zona === seccionVieja ? `${e.lugar} · N° ${e.numero}` : `${e.lugar} · Nicho N° ${e.numero}`)
         : e.cuadro ? `Cuadro ${e.cuadro} · Fosa ${e.numero}` : `Fosa N° ${e.numero}`;
     });
   }
@@ -196,9 +197,10 @@ const Datos = {
       }
       this.estado.version = 6; this.guardar();
     }
-    if ([6, 7, 8].includes(this.estado?.version)) { // ubicación: zona/cuadro/fosa y bloques de la Sección Vieja
+    if ([6, 7, 8, 9].includes(this.estado?.version)) { // ubicación: zona/cuadro/fosa y bloques de la Sección Vieja
+      for (const z of this.estado.zonas) if (z.codigo === "SV_NICHOS") z.nombre = "Sección Vieja";
       numerarEspacios(this.estado.espacios, this.estado.zonas);
-      this.estado.version = 9; this.guardar();
+      this.estado.version = 10; this.guardar();
     }
     const capB = this.estado?.usuarios?.find((u) => u.id === "u-cap-b");
     if (capB) { // queda un solo capataz para ingresar: hereda las zonas del Capataz B
@@ -216,7 +218,7 @@ const Datos = {
       for (const u of this.estado.usuarios) if (u.nombre === "Directivo (demo)") u.nombre = "Director (demo)";
       this.guardar();
     }
-    if (!this.estado || this.estado.version !== 9) { this.estado = await datosIniciales(); this.guardar(); }
+    if (!this.estado || this.estado.version !== 10) { this.estado = await datosIniciales(); this.guardar(); }
     return this.estado;
   },
   guardar(silencioso = false) {
@@ -530,7 +532,8 @@ function seccionDondeHayLugar() {
     lista.sort((a, b) => a.tipo.localeCompare(b.tipo) || a.numero - b.numero);
     const fosas = lista.filter((e) => e.tipo === "fosa").length, nichos = lista.length - fosas;
     const extra = lista.filter((e) => e.tam === "extraordinario").length;
-    const resumen = [fosas && plural(fosas, "fosa", "fosas"), nichos && plural(nichos, "nicho", "nichos")].filter(Boolean).join(" y ") +
+    const sinPalabraNicho = Datos.estado.zonas.find((z) => z.id === id)?.codigo === "SV_NICHOS";
+    const resumen = [fosas && plural(fosas, "fosa", "fosas"), nichos && (sinPalabraNicho ? plural(nichos, "lugar", "lugares") : plural(nichos, "nicho", "nichos"))].filter(Boolean).join(" y ") +
       (extra ? ` · <span class="chip critica" style="font-size:.75rem">${extra} extraordinari${extra === 1 ? (fosas && !nichos ? "a" : "o") : (fosas && !nichos ? "as" : "os")}</span>` : "");
     return `<details class="card lugar"${f.extra || lista.length <= 6 ? " open" : ""}>
       <summary><strong>${esc(nombreZona(id))}</strong> <span class="muted">— ${resumen}</span></summary>
@@ -564,7 +567,7 @@ function abrirListado() {
       ${zonasCon.map((id) => `<option value="${id}" ${String(id) === String(zona) ? "selected" : ""}>${esc(nombreZona(id))} (${todos.filter((e) => e.zona === id).length})</option>`).join("")}
     </select></label>
     ${lista.length ? `<div class="tabla-scroll"><table>
-      <thead><tr><th>Zona</th>${esFosa ? "<th>Cuadro</th><th>Fosa</th>" : "<th>Ubicación</th><th>Nicho N°</th>"}<th>Tamaño</th></tr></thead>
+      <thead><tr><th>Zona</th>${esFosa ? "<th>Cuadro</th><th>Fosa</th>" : "<th>Ubicación</th><th>N°</th>"}<th>Tamaño</th></tr></thead>
       <tbody>${filas}</tbody></table></div>` : '<div class="card vacio">No hay disponibles.</div>'}
     <p style="margin-top:16px"><button class="btn sec" type="button" data-accion="cerrar">Cerrar</button></p>`);
 }
@@ -644,7 +647,7 @@ function detalleZona(id) {
     </div>`);
 }
 
-// Plano de la Sección Vieja (nichos): calles, pasajes y cuadros/bloques con los nichos libres de cada uno.
+// Plano de la Sección Vieja (SV_NICHOS): calles, pasajes y cuadros/bloques con los nichos libres de cada uno.
 function planoSeccionVieja(zonaId) {
   const p = PLANO_SECCION_VIEJA;
   const libres = {};
