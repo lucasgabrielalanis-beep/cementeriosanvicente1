@@ -233,10 +233,10 @@ paths:
         '409': { $ref: '#/components/responses/Conflicto' }
         '422': { $ref: '#/components/responses/FirmaInvalida' }
 
-  /operaciones/descarga-nicho:
+  /operaciones/inhumacion:
     post:
       tags: [Operaciones]
-      summary: Registra una descarga / inhumación en nicho o fosa con firma digital
+      summary: Registra una inhumación en nicho o fosa con firma digital (el lugar pasa a ocupado)
       description: |
         Roles capataz u operario. Operación atómica: bloquea el espacio, verifica
         que esté `disponible` o `reservado`, crea la operación (append-only),
@@ -298,6 +298,27 @@ paths:
         '409': { $ref: '#/components/responses/Conflicto' }
         '422': { $ref: '#/components/responses/FirmaInvalida' }
 
+  /operaciones/descarga:
+    post:
+      tags: [Operaciones]
+      summary: Registra una descarga (retiro de restos) en nicho o fosa con firma digital (el lugar queda disponible)
+      description: Igual que la exhumación. El espacio tiene que figurar `ocupado` y pasa a `disponible`.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LiberacionRequest' }
+      responses:
+        '201':
+          description: Descarga registrada; el espacio queda disponible
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DescargaRespuesta' }
+        '409': { $ref: '#/components/responses/Conflicto' }
+        '422': { $ref: '#/components/responses/FirmaInvalida' }
+
   /operaciones/exhumacion:
     post:
       tags: [Operaciones]
@@ -311,24 +332,7 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [espacio_id, difunto, destino, realizada_en, ubicacion, firma]
-              properties:
-                espacio_id: { type: integer }
-                difunto:
-                  type: object
-                  required: [apellido_nombre]
-                  properties:
-                    apellido_nombre: { type: string }
-                    dni: { type: string }
-                    fecha_defuncion: { type: string, format: date }
-                destino: { type: string, enum: [Osario, Cremación, Reducción, Traslado a otro lugar del cementerio, Traslado a otro cementerio, Otro] }
-                expediente: { type: string }
-                realizada_en: { type: string, format: date-time }
-                ubicacion: { $ref: '#/components/schemas/Coordenadas' }
-                observaciones: { type: string, nullable: true }
-                firma: { $ref: '#/components/schemas/FirmaRequest' }
+            schema: { $ref: '#/components/schemas/LiberacionRequest' }
       responses:
         '201':
           description: Exhumación registrada; el espacio queda disponible
@@ -646,6 +650,25 @@ components:
             acta_defuncion: { type: string }
         expediente: { type: string }
         supervisada_por: { type: string, format: uuid, nullable: true }
+        realizada_en: { type: string, format: date-time }
+        ubicacion: { $ref: '#/components/schemas/Coordenadas' }
+        observaciones: { type: string, nullable: true }
+        firma: { $ref: '#/components/schemas/FirmaRequest' }
+
+    LiberacionRequest:
+      type: object
+      required: [espacio_id, difunto, destino, realizada_en, ubicacion, firma]
+      properties:
+        espacio_id: { type: integer }
+        difunto:
+          type: object
+          required: [apellido_nombre]
+          properties:
+            apellido_nombre: { type: string }
+            dni: { type: string }
+            fecha_defuncion: { type: string, format: date }
+        destino: { type: string, enum: [Osario, Cremación, Reducción, Traslado a otro lugar del cementerio, Traslado a otro cementerio, Otro] }
+        expediente: { type: string }
         realizada_en: { type: string, format: date-time }
         ubicacion: { $ref: '#/components/schemas/Coordenadas' }
         observaciones: { type: string, nullable: true }

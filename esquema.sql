@@ -60,7 +60,8 @@ CREATE TYPE tipo_tarea_mant    AS ENUM (
 CREATE TYPE estado_tarea       AS ENUM (
   'programada', 'asignada', 'en_curso', 'completada', 'cancelada');
 CREATE TYPE tipo_operacion     AS ENUM (
-  'inhumacion',          -- descarga en fosa o nicho
+  'inhumacion',          -- ocupa el nicho o la fosa
+  'descarga',            -- desocupa el nicho o la fosa (retiro de restos): queda libre
   'exhumacion',
   'reduccion',
   'traslado_interno',
@@ -375,7 +376,7 @@ CREATE TABLE operaciones_sepultura (
   observaciones    TEXT,
   idempotency_key  TEXT UNIQUE,
   CONSTRAINT inhumacion_con_difunto CHECK (
-    tipo_operacion NOT IN ('inhumacion','exhumacion','reduccion','cremacion') OR difunto_id IS NOT NULL),
+    tipo_operacion NOT IN ('inhumacion','descarga','exhumacion','reduccion','cremacion') OR difunto_id IS NOT NULL),
   CONSTRAINT anulacion_referencia CHECK (
     (tipo_operacion = 'anulacion') = (anula_operacion_id IS NOT NULL)),
   CONSTRAINT traslado_con_destino CHECK (
@@ -686,10 +687,10 @@ BEGIN
   END LOOP;
 END $$;
 
--- 10.7 Registrar descarga (inhumación) de forma atómica.
+-- 10.7 Registrar inhumación (el lugar pasa a ocupado) de forma atómica.
 -- La firma ya debe estar insertada y verificada por la API (verificación
 -- criptográfica ECDSA en la capa de aplicación con la clave del dispositivo).
-CREATE OR REPLACE FUNCTION registrar_descarga(
+CREATE OR REPLACE FUNCTION registrar_inhumacion(
   p_espacio_id      BIGINT,
   p_difunto_id      UUID,
   p_ejecutada_por   UUID,
@@ -739,9 +740,10 @@ BEGIN
   RETURN v_op;
 END $$;
 
--- 10.7 bis Registrar exhumación: el nicho o la fosa queda libre (vuelve a contar como
--- disponible en el resumen de stock). Misma verificación de firma que la descarga.
-CREATE OR REPLACE FUNCTION registrar_exhumacion(
+-- 10.7 bis Registrar descarga o exhumación: el nicho o la fosa queda libre (vuelve a
+-- contar como disponible en el resumen de stock). Misma verificación de firma.
+CREATE OR REPLACE FUNCTION registrar_liberacion(
+  p_tipo            tipo_operacion,  -- 'descarga' o 'exhumacion'
   p_espacio_id      BIGINT,
   p_difunto_id      UUID,
   p_ejecutada_por   UUID,
@@ -770,6 +772,9 @@ BEGIN
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Espacio % inexistente', p_espacio_id USING ERRCODE = 'P0002';
   END IF;
+  IF p_tipo NOT IN ('descarga', 'exhumacion') THEN
+    RAISE EXCEPTION 'Tipo de operación inválido: %', p_tipo USING ERRCODE = 'P0004';
+  END IF;
   IF v_esp.estado <> 'ocupado' THEN
     RAISE EXCEPTION 'El espacio % no figura ocupado (estado: %)', v_esp.codigo, v_esp.estado
       USING ERRCODE = 'P0003';
@@ -777,7 +782,7 @@ BEGIN
 
   INSERT INTO operaciones_sepultura(tipo_operacion, espacio_id, difunto_id, expediente,
          ejecutada_por, supervisada_por, realizada_en, firma_id, ubicacion, observaciones, idempotency_key)
-  VALUES ('exhumacion', p_espacio_id, p_difunto_id, p_expediente,
+  VALUES (p_tipo, p_espacio_id, p_difunto_id, p_expediente,
           p_ejecutada_por, p_supervisada_por, p_realizada_en, p_firma_id, p_ubicacion,
           'Destino: ' || coalesce(p_destino, 'sin informar'), p_idempotency_key)
   RETURNING * INTO v_op;
