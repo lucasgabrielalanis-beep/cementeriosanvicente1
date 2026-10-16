@@ -1,0 +1,8 @@
+{
+  "name": "generar-pagina",
+  "private": true,
+  "description": "Arma index.html a partir de README.md (no se usa en Vercel).",
+  "type": "module",
+  "scripts": { "pagina": "node generar-pagina.mjs" },
+  "devDependencies": { "marked": "12.0.2", "mermaid": "10.9.1" }
+}
