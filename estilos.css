@@ -188,3 +188,11 @@ input:focus, select:focus, textarea:focus, button:focus-visible { outline: 3px s
 .foto { position: relative; }
 .foto button { position: absolute; top: -8px; right: -8px; width: 28px; height: 28px; border-radius: 50%; border: 0; background: var(--fg); color: var(--bg); cursor: pointer; font-size: .8rem; }
 label.btn { width: fit-content; }
+
+/* ¿Dónde hay lugar? */
+.lista-lugares { display: grid; gap: 8px; }
+.lugar { padding: 12px 16px; }
+.lugar summary { cursor: pointer; list-style-position: outside; }
+.espacios-libres { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.espacios-libres li { background: var(--soft); border-radius: 8px; padding: 4px 10px; font-size: .9rem; }
+.espacios-libres li.extra { background: var(--rojo-bg); color: var(--rojo); border: 1px solid currentColor; }
