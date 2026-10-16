@@ -201,3 +201,5 @@ label.btn { width: fit-content; }
 .stock.clicable:hover { border-color: var(--primary); }
 .stock.clicable:active { transform: scale(.99); }
 .ver-listado { margin-top: 10px; font-size: .9rem; font-weight: 600; color: var(--primary); }
+
+.banner.ok { background: var(--verde-bg); color: var(--verde); border: 1px solid currentColor; }
