@@ -20,6 +20,9 @@
 
 const CLAVE_DATOS = "cementerio-sv-demo-v5";
 const CLAVE_SESION = "cementerio-sv-sesion";
+// Versión publicada. Tiene que coincidir con version.json: si el servidor tiene una más nueva,
+// la app avisa para recargar (así nadie usa una versión vieja guardada en el celular).
+const VERSION_APP = "2026-10-16.1";
 const ZONA_HORARIA = "America/Argentina/Cordoba";
 const PIN_DEMO = "1234";
 const DIA = 86400000;
@@ -420,6 +423,7 @@ async function firmarYRegistrar(usuario, accion, datos, pin, trazoDataUrl, gps, 
       if (!e || !["disponible", "reservado"].includes(e.estado)) throw new Error("Ese espacio ya no está disponible. Elegí otro.");
       e.estado = "ocupado";
       delete e.liberado_en;
+      delete e.liberado_por;
     }
   } else if (ACCIONES_LIBERAN.includes(accion)) {
     // Descarga o exhumación: el lugar queda libre y vuelve a contarse como disponible.
@@ -428,7 +432,7 @@ async function firmarYRegistrar(usuario, accion, datos, pin, trazoDataUrl, gps, 
       // Lugar ocupado de antes que no estaba cargado uno por uno: se agrega ya libre
       // y se descuenta de los ocupados históricos.
       Datos.estado.espacios.push({
-        id: datos.espacio_id, zona: datos.zona, tipo: datos.tipo, tam: datos.tam, estado: "disponible", liberado_en: registrado_en,
+        id: datos.espacio_id, zona: datos.zona, tipo: datos.tipo, tam: datos.tam, estado: "disponible", liberado_en: registrado_en, liberado_por: accion,
         planta: datos.planta, lugar: datos.lugar, fila: datos.fila, cuadro: datos.cuadro, numero: datos.numero, ub: datos.ubicacion, alta_manual: true,
       });
       const clave = datos.tipo + "|" + datos.tam;
@@ -437,6 +441,7 @@ async function firmarYRegistrar(usuario, accion, datos, pin, trazoDataUrl, gps, 
       if (!e || e.estado !== "ocupado") throw new Error("Ese lugar no figura ocupado. Revisá la ubicación.");
       e.estado = "disponible";
       e.liberado_en = registrado_en;
+      e.liberado_por = accion;
     }
   }
   registros.push(registro);
@@ -634,6 +639,7 @@ function vistaResumen() {
     <p class="muted">${enTemporada() ? "Temporada de lluvias: los plazos de mantenimiento están acortados." : "Fuera de temporada de lluvias."} Actualizado: ${fmtFecha(new Date().toISOString())}</p>
     <h2>Disponibilidad de nichos y fosas</h2>
     <div class="grilla">${stock.map(tarjetaStock).join("")}</div>
+    ${seccionLiberados()}
     <h2>Últimos movimientos</h2>
     <p class="muted chico">Cada trabajo firmado se refleja al instante en los números de arriba.</p>
     ${ultimos.length ? tablaMovimientos(ultimos) : `<div class="card vacio">Todavía no hay trabajos firmados. Cada descarga, exhumación o tarea que se firme aparece acá.</div>`}
@@ -757,6 +763,22 @@ function descripcionRegistro(r) {
   return `Inhumación en ${d.tipo} ${d.tam} — ${esc(d.ubicacion)} (${esc(nombreZona(d.zona))}) · ${esc(d.difunto.nombre)} · <strong>quedó ocupado</strong>`;
 }
 const nombreZona = (id) => Datos.estado.zonas.find((z) => z.id === id)?.nombre || "—";
+
+// Lugares que quedaron libres por una descarga o exhumación (últimos 30 días) y siguen disponibles.
+function seccionLiberados() {
+  const desde = Date.now() - 30 * DIA;
+  const lista = Datos.estado.espacios
+    .filter((e) => e.estado === "disponible" && e.liberado_en && new Date(e.liberado_en) >= desde)
+    .sort((a, b) => b.liberado_en.localeCompare(a.liberado_en));
+  if (!lista.length) return "";
+  const tipoTxt = (e) => (e.tipo === "nicho" ? "Nicho" : "Fosa") + (e.tam === "extraordinario" ? " " + nombreTamano(e).toLowerCase() : "");
+  return `<h2 id="liberados">Lugares liberados (disponibles)</h2>
+    <p class="muted chico">Quedaron libres por una descarga o exhumación firmada y ya cuentan como disponibles.</p>
+    <div class="lista-alertas">${lista.slice(0, 20).map((e) => `<div class="card alerta liberado">
+      <div><span class="chip ok">Disponible</span> <strong>${esc(nombreZona(e.zona))} · ${esc(e.ub)}</strong>
+        <div class="muted chico">${tipoTxt(e)} · ${e.liberado_por ? nombreAccion(e.liberado_por) : "Liberado"} del ${fmtFecha(e.liberado_en)}</div></div>
+    </div>`).join("")}</div>`;
+}
 
 // Movimientos con su efecto sobre la disponibilidad.
 function tablaMovimientos(regs) {
@@ -1232,7 +1254,7 @@ document.addEventListener("submit", async (ev) => {
         const lugar = zona.codigo === "PAB_AMARILLO" ? PLANTAS[Number(fd.planta) - 1] : zona.codigo === "SV_NICHOS" ? fd.lugar : undefined;
         esp = Datos.estado.espacios.find((e) => e.tipo === "nicho" && e.zona === zona.id && (e.lugar ?? "") === (lugar ?? "") && e.fila === fila && e.numero === num);
         if (esp && !sirve(esp)) {
-          avisar(`El nicho ${num} de la fila ${fila} figura ${ocupadoTxt(esp)}. Revisá el número.`);
+          avisar(exh && esp.estado === "disponible" ? `El nicho ${num} de la fila ${fila} ya figura libre (disponible): no hace falta registrar la descarga.` : `El nicho ${num} de la fila ${fila} figura ${ocupadoTxt(esp)}. Revisá el número.`);
           return;
         }
         if (!esp) {
@@ -1249,7 +1271,7 @@ document.addEventListener("submit", async (ev) => {
         if (!(num > 0)) { avisar("Escribí el número de fosa."); return; }
         esp = Datos.estado.espacios.find((e) => e.tipo === "fosa" && e.zona === zona.id && (e.cuadro ?? 0) === (cuadro ?? 0) && e.numero === num);
         if (esp && !sirve(esp)) {
-          avisar(`La fosa ${num}${cuadro ? ` del cuadro ${cuadro}` : ""} figura ${ocupadoTxt(esp)}. Revisá el número.`);
+          avisar(exh && esp.estado === "disponible" ? `La fosa ${num}${cuadro ? ` del cuadro ${cuadro}` : ""} ya figura libre (disponible): no hace falta registrar la descarga.` : `La fosa ${num}${cuadro ? ` del cuadro ${cuadro}` : ""} figura ${ocupadoTxt(esp)}. Revisá el número.`);
           return;
         }
         if (!esp) {
@@ -1341,12 +1363,32 @@ $("#reiniciar").addEventListener("click", async () => {
   cerrarModal(); render(); avisar("Demostración reiniciada.");
 });
 
+/* ───────────────────────── Versión ───────────────────────── */
+async function revisarVersion() {
+  try {
+    const r = await fetch("version.json?_=" + Date.now(), { cache: "no-store" });
+    if (!r.ok) return;
+    const { version } = await r.json();
+    if (version && version !== VERSION_APP && !$("#aviso-version")) {
+      const div = document.createElement("div");
+      div.id = "aviso-version";
+      div.className = "aviso-version";
+      div.innerHTML = `Hay una versión nueva de la app. <button type="button" class="btn" id="actualizar-app">Actualizar ahora</button>`;
+      document.body.prepend(div);
+      $("#actualizar-app").addEventListener("click", () => location.reload());
+    }
+  } catch { /* sin conexión: se sigue con la versión actual */ }
+}
+
 /* ───────────────────────── Inicio ───────────────────────── */
 (async function iniciar() {
   if (!window.crypto?.subtle) {
     $("#vista").innerHTML = `<div class="banner critica"><div><strong>No se puede firmar en esta dirección.</strong>Abrí la app desde su dirección segura (https://…).</div></div>`;
     return;
   }
+  revisarVersion();
+  setInterval(revisarVersion, 5 * 60000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) revisarVersion(); });
   await Datos.cargar();
   let id = null;
   try { id = localStorage.getItem(CLAVE_SESION); } catch { /* sin almacenamiento */ }

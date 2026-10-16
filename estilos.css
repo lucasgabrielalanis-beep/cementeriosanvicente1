@@ -203,3 +203,7 @@ label.btn { width: fit-content; }
 .ver-listado { margin-top: 10px; font-size: .9rem; font-weight: 600; color: var(--primary); }
 
 .banner.ok { background: var(--verde-bg); color: var(--verde); border: 1px solid currentColor; }
+
+.aviso-version { position: sticky; top: 0; z-index: 70; background: var(--amarillo-bg); color: var(--fg); border-bottom: 2px solid var(--amarillo-dot); padding: 10px 16px; display: flex; gap: 12px; align-items: center; justify-content: center; flex-wrap: wrap; font-weight: 600; }
+.aviso-version .btn { min-height: 40px; padding: 6px 14px; }
+.liberado { border-left: 6px solid var(--verde); }
