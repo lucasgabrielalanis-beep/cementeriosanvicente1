@@ -2,6 +2,9 @@
 
 Dirección de Cementerios · Municipalidad de Córdoba
 
+**App web (demostración):** [`index.html`](index.html) — tablero del directivo y módulo de campo con firma.
+Usuarios de prueba con PIN `1234`; los datos se guardan solo en el navegador.
+
 Entregables:
 
 | # | Entregable | Archivo |

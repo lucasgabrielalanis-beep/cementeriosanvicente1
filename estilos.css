@@ -1,0 +1,181 @@
+/* Gestión operativa — Cementerio San Vicente Parque */
+:root {
+  --bg: #f4f6f5;
+  --card: #ffffff;
+  --fg: #1b2423;
+  --muted: #5a6764;
+  --line: #d8dfdc;
+  --primary: #1f4e5f;
+  --primary-fg: #ffffff;
+  --soft: #e8efed;
+  --verde: #2f7d4a;
+  --verde-bg: #e3f2e7;
+  --amarillo: #8a6200;
+  --amarillo-bg: #fdf1cc;
+  --amarillo-dot: #e0a800;
+  --rojo: #b42318;
+  --rojo-bg: #fde4e1;
+  --info-bg: #e6eef7;
+  --sombra: 0 1px 2px rgba(0,0,0,.06), 0 2px 8px rgba(0,0,0,.04);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111716; --card: #19211f; --fg: #e6ecea; --muted: #9aa8a4; --line: #2c3633;
+    --primary: #6fb3c8; --primary-fg: #0d1a1f; --soft: #212b29;
+    --verde: #6fcf8f; --verde-bg: #183526; --amarillo: #f3c64f; --amarillo-bg: #3a3014; --amarillo-dot: #f3c64f;
+    --rojo: #ff8a7a; --rojo-bg: #3d1a17; --info-bg: #1b2a38; --sombra: none;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  min-height: 100vh; display: flex; flex-direction: column;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+a { color: var(--primary); }
+h1 { font-size: 1.4rem; margin: 0 0 .25rem; line-height: 1.25; }
+h2 { font-size: 1.1rem; margin: 1.5rem 0 .75rem; }
+h3 { font-size: 1rem; margin: 0 0 .5rem; }
+p { margin: .25rem 0 .75rem; }
+.muted { color: var(--muted); }
+.chico { font-size: .875rem; }
+
+/* Barra superior */
+.barra {
+  background: var(--primary); color: var(--primary-fg);
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 16px; padding-top: max(10px, env(safe-area-inset-top));
+}
+.marca { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.marca img { border-radius: 8px; flex: none; background: #fff2; }
+.marca strong { display: block; line-height: 1.2; }
+.marca span { display: block; font-size: .78rem; opacity: .85; line-height: 1.2; }
+.sesion { display: flex; align-items: center; gap: 8px; font-size: .875rem; text-align: right; }
+.sesion .rol { display: block; font-size: .78rem; opacity: .85; }
+@media (max-width: 480px) { .sesion .rol { display: none; } }
+.sesion button { background: transparent; border: 1px solid currentColor; color: inherit; border-radius: 8px; padding: 4px 10px; cursor: pointer; }
+.aviso-demo { background: var(--info-bg); font-size: .85rem; padding: 6px 16px; text-align: center; }
+
+/* Pestañas */
+.pestanas { display: flex; gap: 4px; overflow-x: auto; padding: 8px 16px 0; background: var(--card); border-bottom: 1px solid var(--line); scrollbar-width: none; }
+.pestanas:empty { display: none; }
+.pestanas button {
+  border: 0; background: none; padding: 10px 12px; border-bottom: 3px solid transparent;
+  white-space: nowrap; cursor: pointer; color: var(--muted); font-weight: 500;
+}
+.pestanas button[aria-current="page"] { color: var(--fg); border-bottom-color: var(--primary); }
+.pestanas .contador { display: inline-block; min-width: 1.4em; padding: 0 5px; border-radius: 99px; background: var(--rojo); color: #fff; font-size: .75rem; margin-left: 4px; }
+
+.vista { flex: 1; width: 100%; max-width: 1100px; margin: 0 auto; padding: 16px 16px 32px; outline: none; }
+
+.pie { display: flex; flex-wrap: wrap; gap: 8px 16px; justify-content: center; padding: 16px; font-size: .85rem; border-top: 1px solid var(--line); }
+.enlace { background: none; border: 0; padding: 0; color: var(--primary); text-decoration: underline; cursor: pointer; }
+
+/* Tarjetas y grillas */
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; box-shadow: var(--sombra); }
+.grilla { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+.fila { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.entre { justify-content: space-between; }
+
+/* Banner de faltante */
+.banner { border-radius: 12px; padding: 12px 16px; margin-bottom: 16px; display: flex; gap: 12px; align-items: flex-start; }
+.banner.critica { background: var(--rojo-bg); color: var(--rojo); border: 1px solid currentColor; }
+.banner.advertencia { background: var(--amarillo-bg); color: var(--amarillo); border: 1px solid currentColor; }
+.banner > div > strong:first-child { display: block; }
+.banner ul { margin: 4px 0 0; padding-left: 18px; color: var(--fg); }
+
+/* Stock */
+.stock .numero { font-size: 2rem; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.barra-umbral { position: relative; height: 10px; border-radius: 99px; background: var(--soft); margin: 10px 0 4px; overflow: hidden; }
+.barra-umbral > span { position: absolute; inset: 0 auto 0 0; border-radius: 99px; }
+.marca-umbral { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--fg); opacity: .5; }
+
+/* Etiquetas de estado */
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 99px; font-size: .8rem; font-weight: 600; white-space: nowrap; }
+.chip::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.verde { color: var(--verde); background: var(--verde-bg); }
+.amarillo { color: var(--amarillo); background: var(--amarillo-bg); }
+.amarillo::before { background: var(--amarillo-dot); }
+.rojo_critico, .critica { color: var(--rojo); background: var(--rojo-bg); }
+.advertencia { color: var(--amarillo); background: var(--amarillo-bg); }
+.info, .ok { color: var(--verde); background: var(--verde-bg); }
+
+/* Semáforo de zonas */
+.resumen-semaforo { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.zonas { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
+.zona {
+  border: 1px solid var(--line); border-left-width: 6px; border-radius: 10px; background: var(--card);
+  padding: 8px 10px; text-align: left; cursor: pointer; min-height: 72px; display: flex; flex-direction: column; justify-content: space-between;
+}
+.zona:hover { border-color: var(--primary); }
+.zona strong { font-size: 1.05rem; line-height: 1.2; }
+.zona span { font-size: .75rem; color: var(--muted); }
+.zona.c-verde { border-left-color: var(--verde); }
+.zona.c-amarillo { border-left-color: var(--amarillo-dot); }
+.zona.c-rojo_critico { border-left-color: var(--rojo); background: var(--rojo-bg); }
+
+/* Tablas */
+.tabla-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { background: var(--soft); font-weight: 600; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .85em; }
+
+/* Formularios */
+.form { display: grid; gap: 14px; max-width: 560px; }
+label { display: grid; gap: 4px; font-weight: 600; font-size: .95rem; }
+label .muted { font-weight: 400; }
+input, select, textarea {
+  width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card);
+  min-height: 48px;
+}
+textarea { min-height: 88px; resize: vertical; }
+input:focus, select:focus, textarea:focus, button:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 45%, transparent); outline-offset: 1px; }
+.dos-col { display: grid; gap: 14px; grid-template-columns: 1fr 1fr; }
+@media (max-width: 480px) { .dos-col { grid-template-columns: 1fr; } }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 48px; padding: 10px 18px; border-radius: 10px; border: 1px solid var(--primary);
+  background: var(--primary); color: var(--primary-fg); font-weight: 600; cursor: pointer; text-decoration: none;
+}
+.btn.sec { background: var(--card); color: var(--primary); }
+.btn.peligro { background: var(--rojo); border-color: var(--rojo); color: #fff; }
+.btn.grande { width: 100%; min-height: 56px; font-size: 1.05rem; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+
+/* Opciones grandes (campo) */
+.opciones { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.opcion { border: 2px solid var(--line); border-radius: 12px; padding: 12px; background: var(--card); cursor: pointer; text-align: left; min-height: 56px; }
+.opcion[aria-pressed="true"] { border-color: var(--primary); background: var(--soft); }
+
+/* Login */
+.login { max-width: 520px; margin: 8px auto; }
+.usuarios { display: grid; gap: 8px; }
+.usuario { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+
+/* Firma */
+.lienzo { width: 100%; height: 180px; border: 2px dashed var(--line); border-radius: 12px; background: #fff; touch-action: none; display: block; }
+.resumen-firma { background: var(--soft); border-radius: 10px; padding: 12px; font-size: .92rem; }
+.resumen-firma dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; }
+.resumen-firma dt { color: var(--muted); }
+.resumen-firma dd { margin: 0; overflow-wrap: anywhere; }
+
+/* Modal */
+.modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: flex-end; justify-content: center; z-index: 50; padding: 0; }
+.modal[hidden] { display: none; }
+.modal-caja { background: var(--card); width: 100%; max-width: 640px; max-height: 92vh; overflow: auto; border-radius: 16px 16px 0 0; padding: 20px 16px; padding-bottom: max(20px, env(safe-area-inset-bottom)); }
+@media (min-width: 700px) { .modal { align-items: center; padding: 16px; } .modal-caja { border-radius: 16px; } }
+
+.toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 10px; z-index: 60; max-width: calc(100% - 32px); box-shadow: 0 4px 16px rgba(0,0,0,.25); }
+
+.lista-alertas { display: grid; gap: 8px; }
+.alerta { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; }
+.vacio { text-align: center; padding: 24px; color: var(--muted); }
+.comprobante { text-align: center; }
+.comprobante .codigo { font-size: 1.6rem; letter-spacing: .1em; font-weight: 700; }
