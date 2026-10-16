@@ -117,10 +117,9 @@ async function datosIniciales() {
   }
 
   const usuarios = [
-    { id: "u-dir", nombre: "Directivo (demo)", rol: "directivo", legajo: "D-001", pin: pinHash, zonas: [] },
+    { id: "u-dir", nombre: "Director (demo)", rol: "directivo", legajo: "D-001", pin: pinHash, zonas: [] },
     { id: "u-cap-a", nombre: "Capataz A (demo)", rol: "capataz", legajo: "C-101", pin: pinHash, zonas: [...range(1, 14), 29, 31, 33, 34] },
     { id: "u-cap-b", nombre: "Capataz B (demo)", rol: "capataz", legajo: "C-102", pin: pinHash, zonas: [...range(15, 28), 30, 32, 35, 36] },
-    { id: "u-op-1", nombre: "Operario 1 (demo)", rol: "operario", legajo: "O-201", pin: pinHash, zonas: [...range(1, 14), 29, 31, 33, 34] },
   ];
   for (const z of zonas) z.responsable = usuarios.find((u) => u.rol === "capataz" && u.zonas.includes(z.id))?.id || null;
 
@@ -190,6 +189,12 @@ const Datos = {
     if (this.estado?.version === 6) { // cada nicho y fosa pasa a tener su número dentro de la zona
       numerarEspacios(this.estado.espacios);
       this.estado.version = 7; this.guardar();
+    }
+    if (this.estado?.usuarios?.some((u) => u.rol === "operario" || u.nombre === "Directivo (demo)")) {
+      // Para ingresar quedan solo el director y los capataces.
+      this.estado.usuarios = this.estado.usuarios.filter((u) => u.rol !== "operario");
+      for (const u of this.estado.usuarios) if (u.nombre === "Directivo (demo)") u.nombre = "Director (demo)";
+      this.guardar();
     }
     if (!this.estado || this.estado.version !== 7) { this.estado = await datosIniciales(); this.guardar(); }
     return this.estado;
