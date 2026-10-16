@@ -39,11 +39,10 @@ SET search_path = cementerio, public;
 CREATE TYPE rol_usuario        AS ENUM ('directivo', 'capataz', 'operario');
 CREATE TYPE tipo_zona          AS ENUM ('parque_fosas', 'nichos', 'mixta', 'especial');
 CREATE TYPE categoria_sector   AS ENUM (
-  'zona_numerada', 'cementerio_israelita', 'pabellon_amarillo',
-  'horno_crematorio', 'memorial', 'osario', 'otro');
+  'zona_numerada', 'pabellon_amarillo', 'memorial', 'osario', 'otro');
 CREATE TYPE tipo_punto_ref     AS ENUM (
   'acceso', 'administracion', 'cruz_mayor', 'rotonda', 'osario', 'memorial',
-  'horno_crematorio', 'banos', 'deposito_herramientas', 'canilla', 'otro');
+  'banos', 'deposito_herramientas', 'canilla', 'otro');
 CREATE TYPE tipo_espacio       AS ENUM ('nicho', 'fosa');
 CREATE TYPE tipo_tamano        AS ENUM ('normal', 'extraordinario');
 CREATE TYPE estado_espacio     AS ENUM (
@@ -107,7 +106,7 @@ CREATE INDEX idx_dispositivos_usuario ON dispositivos(usuario_id) WHERE revocado
 -- 3. Topología ----------------------------------------------------------------
 CREATE TABLE zonas (
   id               SMALLSERIAL PRIMARY KEY,
-  codigo           TEXT NOT NULL UNIQUE,              -- 'Z01'..'Z28', 'ISRAELITA', 'PAB_AMARILLO'...
+  codigo           TEXT NOT NULL UNIQUE,              -- 'Z01'..'Z28', 'PAB_AMARILLO', 'MEMORIAL', 'OSARIO'
   numero           SMALLINT UNIQUE CHECK (numero BETWEEN 1 AND 28),
   nombre           TEXT NOT NULL,
   categoria        categoria_sector NOT NULL,
@@ -744,9 +743,7 @@ SELECT 'Z' || lpad(n::text, 2, '0'), n, 'Zona ' || n, 'zona_numerada', 'mixta'
 FROM generate_series(1, 28) AS n;
 
 INSERT INTO zonas (codigo, nombre, categoria, tipo, requiere_corte_cesped) VALUES
-  ('ISRAELITA',     'Cementerio Israelita', 'cementerio_israelita', 'mixta',   TRUE),
   ('PAB_AMARILLO',  'Pabellón Amarillo',    'pabellon_amarillo',    'nichos',  FALSE),
-  ('HORNO',         'Horno Crematorio',     'horno_crematorio',     'especial',FALSE),
   ('MEMORIAL',      'Memorial',             'memorial',             'especial',TRUE),
   ('OSARIO',        'Osario',               'osario',               'especial',FALSE);
 
@@ -758,7 +755,6 @@ INSERT INTO puntos_referencia (tipo, nombre, zona_id) VALUES
   ('rotonda',          'Rotonda',                             NULL),
   ('osario',           'Osario',            (SELECT id FROM zonas WHERE codigo = 'OSARIO')),
   ('memorial',         'Memorial',          (SELECT id FROM zonas WHERE codigo = 'MEMORIAL')),
-  ('horno_crematorio', 'Horno Crematorio',  (SELECT id FROM zonas WHERE codigo = 'HORNO')),
   ('banos',            'Baños',                               NULL);
 
 -- Plazos de referencia (ajustables por la Dirección).

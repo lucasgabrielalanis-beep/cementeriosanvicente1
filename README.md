@@ -86,7 +86,7 @@ erDiagram
 
 | Tabla | Para qué |
 |---|---|
-| `zonas` | Zonas 1–28 + Cementerio Israelita, Pabellón Amarillo, Horno Crematorio, Memorial, Osario. Tipo: `parque_fosas`, `nichos`, `mixta`, `especial`. Geometría. |
+| `zonas` | Zonas 1–28 + Pabellón Amarillo, Memorial y Osario. Tipo: `parque_fosas`, `nichos`, `mixta`, `especial`. Geometría. |
 | `puntos_referencia` | Ingresos (Calle Soto y Calle Martin Cartechini), Administración, Cruz Mayor, Rotonda, Osario, Baños… para orientarse en campo. |
 | `espacios_sepultura` | Nichos (pabellón/nivel/columna) y fosas (sección/fila/número); tamaño `normal`/`extraordinario`; estado; `version` para concurrencia. |
 | `firmas_digitales` | Una por acción de campo: quién, cuándo (cliente + servidor), qué (hash), dónde (GPS), con qué dispositivo; encadenada por hash. **Inmutable.** |
@@ -137,7 +137,7 @@ color de la zona = el peor color entre sus tareas
 Valores iniciales de referencia (editables): corte de césped 15 / 30 días
 (en lluvias: 9 / 18), desmalezado 30 / 60, recolección de residuos 3 / 7,
 desagües pluviales 30 / 45. Se puede fijar un plazo distinto por zona.
-Zonas sin césped (Pabellón Amarillo, Horno, Osario) no evalúan corte.
+Zonas sin césped (Pabellón Amarillo, Osario) no evalúan corte.
 
 ### 3.2 Faltante de nichos y fosas
 
@@ -232,7 +232,9 @@ flowchart TD
 
 ## 5. Componentes de interfaz
 
-### Dashboard Directivo (escritorio / tablet)
+### Tablero (escritorio, tablet o celular)
+
+Lo ven todos: directivos, capataces y operarios. Los ajustes de umbrales y plazos son solo para directivos.
 
 - **Banner "Faltante crítico"** fijo arriba cuando `faltante_critico = true`,
   con el detalle (p. ej. "Nichos extraordinarios: 9 disponibles · ~12 días de cobertura").

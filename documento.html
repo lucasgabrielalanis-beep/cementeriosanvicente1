@@ -145,7 +145,7 @@ offline, 72 h con marca offline) se rechaza o se genera alerta
 </thead>
 <tbody><tr>
 <td><code>zonas</code></td>
-<td>Zonas 1–28 + Cementerio Israelita, Pabellón Amarillo, Horno Crematorio, Memorial, Osario. Tipo: <code>parque_fosas</code>, <code>nichos</code>, <code>mixta</code>, <code>especial</code>. Geometría.</td>
+<td>Zonas 1–28 + Pabellón Amarillo, Memorial y Osario. Tipo: <code>parque_fosas</code>, <code>nichos</code>, <code>mixta</code>, <code>especial</code>. Geometría.</td>
 </tr>
 <tr>
 <td><code>puntos_referencia</code></td>
@@ -237,7 +237,7 @@ color de la zona = el peor color entre sus tareas
 <p>Valores iniciales de referencia (editables): corte de césped 15 / 30 días
 (en lluvias: 9 / 18), desmalezado 30 / 60, recolección de residuos 3 / 7,
 desagües pluviales 30 / 45. Se puede fijar un plazo distinto por zona.
-Zonas sin césped (Pabellón Amarillo, Horno, Osario) no evalúan corte.</p>
+Zonas sin césped (Pabellón Amarillo, Osario) no evalúan corte.</p>
 <h3>3.2 Faltante de nichos y fosas</h3>
 <p>Por cada combinación tipo × tamaño (y opcionalmente por zona):</p>
 <pre><code>crítico      si disponibles ≤ umbral_critico
@@ -310,7 +310,8 @@ actualiza; cuando el stock se recupera, se cierra sola.</p>
   Q -- "OK" --&gt; OK["Cierra alerta si existía"]</div>
 <hr>
 <h2>5. Componentes de interfaz</h2>
-<h3>Dashboard Directivo (escritorio / tablet)</h3>
+<h3>Tablero (escritorio, tablet o celular)</h3>
+<p>Lo ven todos: directivos, capataces y operarios. Los ajustes de umbrales y plazos son solo para directivos.</p>
 <ul>
 <li><strong>Banner &quot;Faltante crítico&quot;</strong> fijo arriba cuando <code>faltante_critico = true</code>,
 con el detalle (p. ej. &quot;Nichos extraordinarios: 9 disponibles · ~12 días de cobertura&quot;).</li>

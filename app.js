@@ -18,7 +18,7 @@
  */
 "use strict";
 
-const CLAVE_DATOS = "cementerio-sv-demo-v1";
+const CLAVE_DATOS = "cementerio-sv-demo-v2";
 const CLAVE_SESION = "cementerio-sv-sesion";
 const ZONA_HORARIA = "America/Argentina/Cordoba";
 const PIN_DEMO = "1234";
@@ -85,9 +85,7 @@ async function datosIniciales() {
     });
   }
   [
-    ["ISRAELITA", "Cementerio Israelita", "mixta", true],
     ["PAB_AMARILLO", "Pabellón Amarillo", "nichos", false],
-    ["HORNO", "Horno Crematorio", "especial", false],
     ["MEMORIAL", "Memorial", "especial", true],
     ["OSARIO", "Osario", "especial", false],
   ].forEach(([codigo, nombre, tipo, corte], i) => zonas.push({ id: 29 + i, codigo, numero: null, nombre, tipo, corte }));
@@ -111,9 +109,9 @@ async function datosIniciales() {
 
   const usuarios = [
     { id: "u-dir", nombre: "Directivo (demo)", rol: "directivo", legajo: "D-001", pin: pinHash, zonas: [] },
-    { id: "u-cap-a", nombre: "Capataz A (demo)", rol: "capataz", legajo: "C-101", pin: pinHash, zonas: [...range(1, 14), 30, 31, 33] },
-    { id: "u-cap-b", nombre: "Capataz B (demo)", rol: "capataz", legajo: "C-102", pin: pinHash, zonas: [...range(15, 28), 29, 32] },
-    { id: "u-op-1", nombre: "Operario 1 (demo)", rol: "operario", legajo: "O-201", pin: pinHash, zonas: [...range(1, 14), 30, 31, 33] },
+    { id: "u-cap-a", nombre: "Capataz A (demo)", rol: "capataz", legajo: "C-101", pin: pinHash, zonas: [...range(1, 14), 29, 31] },
+    { id: "u-cap-b", nombre: "Capataz B (demo)", rol: "capataz", legajo: "C-102", pin: pinHash, zonas: [...range(15, 28), 30] },
+    { id: "u-op-1", nombre: "Operario 1 (demo)", rol: "operario", legajo: "O-201", pin: pinHash, zonas: [...range(1, 14), 29, 31] },
   ];
   for (const z of zonas) z.responsable = usuarios.find((u) => u.rol === "capataz" && u.zonas.includes(z.id))?.id || null;
 
@@ -140,7 +138,7 @@ async function datosIniciales() {
   }
 
   return {
-    version: 1,
+    version: 2,
     creado: new Date(ahora).toISOString(),
     usuarios, zonas, reglas,
     temporada: { desde: "11-01", hasta: "03-31", factor: 0.6 },
@@ -162,7 +160,7 @@ const Datos = {
   estado: null,
   async cargar() {
     try { this.estado = JSON.parse(localStorage.getItem(CLAVE_DATOS)); } catch { this.estado = null; }
-    if (!this.estado || this.estado.version !== 1) { this.estado = await datosIniciales(); this.guardar(); }
+    if (!this.estado || this.estado.version !== 2) { this.estado = await datosIniciales(); this.guardar(); }
     return this.estado;
   },
   guardar() {
@@ -375,7 +373,8 @@ function cerrarModal() {
 
 const PESTANAS = {
   directivo: [["resumen", "Resumen"], ["zonas", "Zonas"], ["alertas", "Alertas"], ["registro", "Registro firmado"], ["ajustes", "Ajustes"]],
-  campo: [["mis-zonas", "Mis zonas"], ["tarea", "Registrar tarea"], ["descarga", "Registrar descarga"], ["mis-registros", "Mis registros"]],
+  // Los tableros (resumen, zonas, alertas, registro) los ven todos; los ajustes, solo directivos.
+  campo: [["mis-zonas", "Mis zonas"], ["tarea", "Registrar tarea"], ["descarga", "Registrar descarga"], ["resumen", "Resumen"], ["zonas", "Zonas"], ["alertas", "Alertas"], ["registro", "Registro firmado"], ["mis-registros", "Mis registros"]],
 };
 const grupoRol = (u) => (u.rol === "directivo" ? "directivo" : "campo");
 
@@ -406,7 +405,7 @@ function vistaLogin() {
     <p class="muted">Elegí un usuario de prueba. El PIN de demostración es <strong>${PIN_DEMO}</strong>.</p>
     <form class="form" data-form="login">
       <div class="usuarios" role="radiogroup" aria-label="Usuario">
-        ${usuarios.map((u, i) => `<label class="card usuario"><span><strong>${esc(u.nombre)}</strong><br><span class="muted chico">${u.rol === "directivo" ? "Tablero, alertas y control" : "Trabajo en campo · " + u.zonas.length + " zonas asignadas"}</span></span><input type="radio" name="usuario" value="${u.id}" ${i === 0 ? "checked" : ""} style="width:auto;min-height:auto"></label>`).join("")}
+        ${usuarios.map((u, i) => `<label class="card usuario"><span><strong>${esc(u.nombre)}</strong><br><span class="muted chico">${u.rol === "directivo" ? "Tablero, alertas y control" : "Campo y tableros · " + u.zonas.length + " zonas asignadas"}</span></span><input type="radio" name="usuario" value="${u.id}" ${i === 0 ? "checked" : ""} style="width:auto;min-height:auto"></label>`).join("")}
       </div>
       <label>PIN<input name="pin" type="password" inputmode="numeric" autocomplete="off" required maxlength="8" placeholder="••••"></label>
       <button class="btn grande" type="submit">Ingresar</button>
