@@ -39,11 +39,10 @@ SET search_path = cementerio, public;
 CREATE TYPE rol_usuario        AS ENUM ('directivo', 'capataz', 'operario');
 CREATE TYPE tipo_zona          AS ENUM ('parque_fosas', 'nichos', 'mixta', 'especial');
 CREATE TYPE categoria_sector   AS ENUM (
-  'zona_numerada', 'cementerio_israelita', 'pabellon_amarillo',
-  'horno_crematorio', 'memorial', 'osario', 'otro');
+  'zona_numerada', 'pabellon_amarillo', 'memorial', 'osario', 'otro');
 CREATE TYPE tipo_punto_ref     AS ENUM (
   'acceso', 'administracion', 'cruz_mayor', 'rotonda', 'osario', 'memorial',
-  'horno_crematorio', 'banos', 'deposito_herramientas', 'canilla', 'otro');
+  'banos', 'deposito_herramientas', 'canilla', 'otro');
 CREATE TYPE tipo_espacio       AS ENUM ('nicho', 'fosa');
 CREATE TYPE tipo_tamano        AS ENUM ('normal', 'extraordinario');
 CREATE TYPE estado_espacio     AS ENUM (
@@ -107,7 +106,7 @@ CREATE INDEX idx_dispositivos_usuario ON dispositivos(usuario_id) WHERE revocado
 -- 3. Topología ----------------------------------------------------------------
 CREATE TABLE zonas (
   id               SMALLSERIAL PRIMARY KEY,
-  codigo           TEXT NOT NULL UNIQUE,              -- 'Z01'..'Z28', 'ISRAELITA', 'PAB_AMARILLO'...
+  codigo           TEXT NOT NULL UNIQUE,              -- 'Z01'..'Z28', 'PAB_AMARILLO', 'MEMORIAL', 'OSARIO'
   numero           SMALLINT UNIQUE CHECK (numero BETWEEN 1 AND 28),
   nombre           TEXT NOT NULL,
   categoria        categoria_sector NOT NULL,
@@ -570,6 +569,22 @@ END $$;
 CREATE TRIGGER espacio_estado BEFORE UPDATE ON espacios_sepultura
   FOR EACH ROW EXECUTE FUNCTION trg_espacio_estado();
 
+-- 10.4 bis Un nicho solo puede estar en una zona de nichos y una fosa en una de
+-- parque/fosas (las zonas 1 a 28 tienen solo fosas; los nichos, el Pabellón Amarillo).
+CREATE OR REPLACE FUNCTION trg_espacio_zona_compatible() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE v_tipo tipo_zona;
+BEGIN
+  SELECT tipo INTO v_tipo FROM zonas WHERE id = NEW.zona_id;
+  IF (NEW.tipo_espacio = 'nicho' AND v_tipo NOT IN ('nichos', 'mixta'))
+     OR (NEW.tipo_espacio = 'fosa' AND v_tipo NOT IN ('parque_fosas', 'mixta')) THEN
+    RAISE EXCEPTION 'Un % no puede ubicarse en una zona de tipo %', NEW.tipo_espacio, v_tipo
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER espacio_zona_compatible BEFORE INSERT OR UPDATE OF zona_id, tipo_espacio ON espacios_sepultura
+  FOR EACH ROW EXECUTE FUNCTION trg_espacio_zona_compatible();
+
 -- 10.5 Evaluación de stock: abre/actualiza/cierra alertas de faltante.
 CREATE OR REPLACE FUNCTION evaluar_stock() RETURNS void LANGUAGE plpgsql AS $$
 DECLARE r RECORD; v_clave TEXT;
@@ -737,16 +752,13 @@ BEGIN
 END $$;
 
 -- 11. Datos iniciales ---------------------------------------------------------
--- Zonas 1 a 28. El tipo (parque/fosas, nichos o mixta) de cada zona hay que
--- confirmarlo con el plano oficial; se cargan como 'mixta' hasta revisarlo.
+-- Zonas 1 a 28: solo fosas (parque). Los nichos están en el Pabellón Amarillo.
 INSERT INTO zonas (codigo, numero, nombre, categoria, tipo)
-SELECT 'Z' || lpad(n::text, 2, '0'), n, 'Zona ' || n, 'zona_numerada', 'mixta'
+SELECT 'Z' || lpad(n::text, 2, '0'), n, 'Zona ' || n, 'zona_numerada', 'parque_fosas'
 FROM generate_series(1, 28) AS n;
 
 INSERT INTO zonas (codigo, nombre, categoria, tipo, requiere_corte_cesped) VALUES
-  ('ISRAELITA',     'Cementerio Israelita', 'cementerio_israelita', 'mixta',   TRUE),
   ('PAB_AMARILLO',  'Pabellón Amarillo',    'pabellon_amarillo',    'nichos',  FALSE),
-  ('HORNO',         'Horno Crematorio',     'horno_crematorio',     'especial',FALSE),
   ('MEMORIAL',      'Memorial',             'memorial',             'especial',TRUE),
   ('OSARIO',        'Osario',               'osario',               'especial',FALSE);
 
@@ -758,7 +770,6 @@ INSERT INTO puntos_referencia (tipo, nombre, zona_id) VALUES
   ('rotonda',          'Rotonda',                             NULL),
   ('osario',           'Osario',            (SELECT id FROM zonas WHERE codigo = 'OSARIO')),
   ('memorial',         'Memorial',          (SELECT id FROM zonas WHERE codigo = 'MEMORIAL')),
-  ('horno_crematorio', 'Horno Crematorio',  (SELECT id FROM zonas WHERE codigo = 'HORNO')),
   ('banos',            'Baños',                               NULL);
 
 -- Plazos de referencia (ajustables por la Dirección).
