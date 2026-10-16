@@ -552,7 +552,7 @@ function tarjetaStock(s) {
     <div class="muted chico">Crítico ≤ ${u.crit} · Advertencia ≤ ${u.adv}</div>
     <div class="chico" style="margin-top:8px">${s.cobertura !== null ? `Cobertura estimada: <strong>~${fmtNum(s.cobertura)} días</strong> (${fmtNum(s.consumo, 1)} por día)` : "Sin consumo reciente"}</div>
     <div class="muted chico">Reservados ${s.reservado} · En mantenimiento ${s.en_mantenimiento} · Inhabilitados ${s.inhabilitado}</div>
-    <div class="chico" style="margin-top:6px">Últimos 30 días: <strong>${s.descargas30}</strong> ${s.descargas30 === 1 ? "descarga" : "descargas"} · <strong style="color:var(--verde)">${s.exhumaciones30}</strong> ${s.exhumaciones30 === 1 ? "exhumación (liberó un lugar)" : "exhumaciones (liberaron lugares)"}</div>
+    <div class="chico" style="margin-top:6px">Últimos 30 días: <strong>${s.descargas30}</strong> ${s.descargas30 === 1 ? "descarga" : "descargas"} · <strong style="color:var(--verde)">${s.exhumaciones30}</strong> ${s.exhumaciones30 === 0 ? "exhumaciones" : s.exhumaciones30 === 1 ? "exhumación (liberó un lugar)" : "exhumaciones (liberaron lugares)"}</div>
     <div class="ver-listado">${s.disponible ? "Tocá para ver el listado →" : "No hay disponibles"}</div>
   </div>`;
 }
@@ -617,12 +617,15 @@ function vistaResumen() {
   const cuenta = { verde: 0, amarillo: 0, rojo_critico: 0 };
   zonas.forEach(({ s }) => cuenta[s.color]++);
   const criticas = zonas.filter(({ s }) => s.color === "rojo_critico");
-  const ultimos = Datos.estado.registros.slice(-5).reverse();
+  const ultimos = Datos.estado.registros.slice(-8).reverse();
   return `${bannerFaltante(stock)}
     <h1>Resumen</h1>
     <p class="muted">${enTemporada() ? "Temporada de lluvias: los plazos de mantenimiento están acortados." : "Fuera de temporada de lluvias."} Actualizado: ${fmtFecha(new Date().toISOString())}</p>
     <h2>Disponibilidad de nichos y fosas</h2>
     <div class="grilla">${stock.map(tarjetaStock).join("")}</div>
+    <h2>Últimos movimientos</h2>
+    <p class="muted chico">Cada trabajo firmado se refleja al instante en los números de arriba.</p>
+    ${ultimos.length ? tablaMovimientos(ultimos) : `<div class="card vacio">Todavía no hay trabajos firmados. Cada descarga, exhumación o tarea que se firme aparece acá.</div>`}
     ${seccionDondeHayLugar()}
     <h2>Semáforo de mantenimiento</h2>
     <div class="resumen-semaforo">
@@ -632,8 +635,7 @@ function vistaResumen() {
     </div>
     ${criticas.length ? `<div class="zonas">${criticas.map(({ z, s }) => tileZona(z, s)).join("")}</div>` : `<p class="muted">No hay zonas en rojo crítico.</p>`}
     <p><button class="btn sec" type="button" data-pestana="zonas">Ver las ${zonas.length} zonas</button></p>
-    <h2>Últimos registros firmados</h2>
-    ${ultimos.length ? tablaRegistros(ultimos) : `<div class="card vacio">Todavía no hay registros. Lo que cargue el personal en campo aparece acá.</div>`}`;
+`;
 }
 
 function tileZona(z, s) {
@@ -744,6 +746,23 @@ function descripcionRegistro(r) {
   return `Descarga en ${d.tipo} ${d.tam} — ${esc(d.ubicacion)} (${esc(nombreZona(d.zona))}) · ${esc(d.difunto.nombre)}`;
 }
 const nombreZona = (id) => Datos.estado.zonas.find((z) => z.id === id)?.nombre || "—";
+
+// Movimientos con su efecto sobre la disponibilidad.
+function tablaMovimientos(regs) {
+  const efecto = (r) => {
+    const d = r.payload.datos;
+    if (r.payload.accion === "descarga") return `<span class="chip advertencia">−1 ${d.tipo === "nicho" ? "nicho" : "fosa"} libre</span>`;
+    if (r.payload.accion === "exhumacion") return `<span class="chip ok">+1 ${d.tipo === "nicho" ? "nicho" : "fosa"} libre</span>`;
+    return `<span class="chip info">Mantenimiento</span>`;
+  };
+  return `<div class="tabla-scroll"><table>
+    <thead><tr><th>Cuándo</th><th>Qué</th><th>Efecto</th><th>Código</th></tr></thead>
+    <tbody>${regs.map((r) => `<tr>
+      <td>${fmtFecha(r.registrado_en)}<br><span class="muted chico">${esc(r.payload.usuario.nombre)}</span></td>
+      <td>${descripcionRegistro(r)}</td><td>${efecto(r)}</td>
+      <td><button type="button" class="enlace mono" data-registro="${r.secuencia}">${codigoCorto(r.hash_registro)}</button></td>
+    </tr>`).join("")}</tbody></table></div>`;
+}
 
 function tablaRegistros(regs) {
   return `<div class="tabla-scroll"><table>
@@ -943,7 +962,8 @@ function actualizarListaEspacios() {
     html = `<fieldset style="border:0;padding:0;margin:0"><legend style="font-weight:600;margin-bottom:6px">Planta</legend>
       <div class="opciones">${btn("", `Todas (${enZona.length})`)}${PLANTAS.map((p, i) => btn(i + 1, `${p} (${cuantos((e) => e.planta === i + 1)})`)).join("")}</div></fieldset>`;
   } else if (zonaSel?.codigo === "SV_NICHOS" && f.tipo === "nicho") {
-    const lugares = [...new Set(enZona.map((e) => e.lugar))].sort((a, b) => a.localeCompare(b, "es", { numeric: true }));
+    // Todos los cuadros/bloques del plano (en una exhumación casi nunca están cargados de antemano).
+    const lugares = [...new Set([...BLOQUES_CON_NICHOS.map(etiquetaBloque), ...enZona.map((e) => e.lugar)])].sort((a, b) => a.localeCompare(b, "es", { numeric: true }));
     html = `<label>Cuadro / Bloque<select data-filtro-lugar><option value="">Todos (${enZona.length})</option>
       ${lugares.map((l) => `<option value="${esc(l)}" ${l === f.lugar ? "selected" : ""}>${esc(l)} (${cuantos((e) => e.lugar === l)})</option>`).join("")}</select></label>`;
   }
@@ -1246,6 +1266,9 @@ document.addEventListener("submit", async (ev) => {
       const boton = form.querySelector('button[type="submit"]');
       boton.disabled = true; boton.textContent = "Firmando…";
       const { accion, datos, gps, fotos = [] } = UI.firmaPendiente;
+      const mueveStock = accion === "descarga" || accion === "exhumacion";
+      const disponiblesDe = () => resumenStock().find((s) => s.tipo === datos.tipo && s.tam === datos.tam)?.disponible;
+      const antes = mueveStock ? disponiblesDe() : null;
       let reg;
       try { reg = await firmarYRegistrar(UI.usuario, accion, datos, f.pin.value, trazoReducido(c), gps, fotos); }
       catch (e) { boton.disabled = false; boton.textContent = "Firmar y registrar"; avisar(e.message); return; }
@@ -1255,12 +1278,16 @@ document.addEventListener("submit", async (ev) => {
       abrirModal(`<div class="comprobante">
         <h2 style="margin-top:0">Registrado ✔</h2>
         <p>${descripcionRegistro(reg)}</p>
+        ${mueveStock ? `<div class="banner ${accion === "exhumacion" ? "ok" : "advertencia"}" style="justify-content:center;margin:8px 0">
+          <div><strong>${nombreStock(datos.tipo, datos.tam)} disponibles: ${fmtNum(antes)} → ${fmtNum(disponiblesDe())}</strong>
+          ${accion === "exhumacion" ? "El lugar quedó libre y ya figura en el Resumen." : "El lugar quedó ocupado y ya se descontó en el Resumen."}</div></div>` : ""}
         <p class="muted">${fmtFecha(reg.registrado_en)} · ${esc(UI.usuario.nombre)}</p>
         <p class="muted chico">Código de verificación</p>
         <p class="codigo mono">${codigoCorto(reg.hash_registro)}</p>
         <div class="fila" style="justify-content:center">
           <button class="btn" type="button" data-accion="cerrar">Listo</button>
           <button class="btn sec" type="button" data-registro="${reg.secuencia}">Ver comprobante</button>
+          <button class="btn sec" type="button" data-pestana="resumen">Ir al Resumen</button>
         </div></div>`);
     } else if (tipoForm === "ajustes") {
       const e = Datos.estado;
