@@ -49,7 +49,7 @@ CREATE TYPE categoria_sector   AS ENUM (
   'otro');
 CREATE TYPE tipo_punto_ref     AS ENUM (
   'acceso', 'administracion', 'cruz_mayor', 'rotonda', 'osario', 'memorial',
-  'banos', 'deposito_herramientas', 'canilla', 'otro');
+  'banos', 'deposito_herramientas', 'canilla', 'calle', 'pasaje', 'otro');
 CREATE TYPE tipo_espacio       AS ENUM ('nicho', 'fosa');
 CREATE TYPE tipo_tamano        AS ENUM ('normal', 'extraordinario');
 CREATE TYPE estado_espacio     AS ENUM (
@@ -152,13 +152,32 @@ CREATE TABLE asignaciones_zona (
 CREATE INDEX idx_asig_zona_vigente ON asignaciones_zona(zona_id, usuario_id) WHERE hasta IS NULL;
 
 -- 4. Espacios de sepultura ----------------------------------------------------
+-- Bloques de la Sección Vieja (nichos), según el plano: sector, cuadro (letra),
+-- número de bloque y "Prop." tal como figura en el plano.
+CREATE TABLE bloques_seccion (
+  id               SERIAL PRIMARY KEY,
+  zona_id          SMALLINT NOT NULL REFERENCES zonas(id),
+  sector           TEXT NOT NULL,                     -- 'Fila 1', 'Sector superior (zona norte)'...
+  cuadro           TEXT,                              -- letra: A, B, C... (puede repetirse en distintos bloques)
+  nombre           TEXT,                              -- 'Pabellón Ferroviario Julio Juárez', 'Central', 'Osario'...
+  bloque           SMALLINT CHECK (bloque > 0),
+  prop             SMALLINT,
+  nota             TEXT,
+  tiene_nichos     BOOLEAN NOT NULL DEFAULT TRUE,
+  orden            SMALLINT NOT NULL,
+  CHECK (cuadro IS NOT NULL OR nombre IS NOT NULL)
+);
+CREATE INDEX idx_bloques_zona ON bloques_seccion(zona_id, orden);
+
 CREATE TABLE espacios_sepultura (
   id               BIGSERIAL PRIMARY KEY,
   zona_id          SMALLINT NOT NULL REFERENCES zonas(id),
   tipo_espacio     tipo_espacio NOT NULL,
   tipo_tamano      tipo_tamano  NOT NULL DEFAULT 'normal',
   estado           estado_espacio NOT NULL DEFAULT 'disponible',
-  -- Nichos: pabellón/bloque + nivel (fila vertical) + columna
+  -- Nichos: pabellón/bloque + nivel (fila vertical) + columna.
+  -- En la Sección Vieja: bloque del plano (bloques_seccion) + número de nicho.
+  bloque_id        INTEGER REFERENCES bloques_seccion(id),
   pabellon         TEXT,
   nivel            SMALLINT CHECK (nivel BETWEEN 1 AND 12),
   columna          SMALLINT CHECK (columna > 0),
@@ -169,7 +188,9 @@ CREATE TABLE espacios_sepultura (
   fila             SMALLINT CHECK (fila > 0),
   numero           INTEGER CHECK (numero > 0),
   codigo           TEXT GENERATED ALWAYS AS (
-                     CASE WHEN tipo_espacio = 'nicho'
+                     CASE WHEN tipo_espacio = 'nicho' AND bloque_id IS NOT NULL
+                          THEN 'N-' || zona_id || '-B' || bloque_id || '-' || numero
+                          WHEN tipo_espacio = 'nicho'
                           THEN 'N-' || zona_id || '-' || coalesce(pabellon,'') || '-' || nivel || '-' || columna
                           WHEN cuadro IS NOT NULL
                           THEN 'F-' || zona_id || '-C' || cuadro || '-' || numero
@@ -182,7 +203,9 @@ CREATE TABLE espacios_sepultura (
   creado_en        TIMESTAMPTZ NOT NULL DEFAULT now(),
   actualizado_en   TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT nicho_ubicacion CHECK (
-    tipo_espacio <> 'nicho' OR (nivel IS NOT NULL AND columna IS NOT NULL)),
+    tipo_espacio <> 'nicho' OR (nivel IS NOT NULL AND columna IS NOT NULL)
+                            OR (bloque_id IS NOT NULL AND numero IS NOT NULL)),
+  CONSTRAINT bloque_solo_nichos CHECK (bloque_id IS NULL OR tipo_espacio = 'nicho'),
   CONSTRAINT fosa_ubicacion CHECK (
     tipo_espacio <> 'fosa' OR (numero IS NOT NULL AND (cuadro IS NOT NULL OR fila IS NOT NULL))),
   CONSTRAINT cuadro_solo_fosas CHECK (cuadro IS NULL OR tipo_espacio = 'fosa'),
@@ -191,7 +214,7 @@ CREATE TABLE espacios_sepultura (
   CONSTRAINT inhabilitado_con_motivo CHECK (
     estado <> 'inhabilitado' OR motivo_inhabilitacion IS NOT NULL),
   CONSTRAINT espacio_unico UNIQUE NULLS NOT DISTINCT
-    (zona_id, tipo_espacio, pabellon, nivel, columna, cuadro, seccion, fila, numero)
+    (zona_id, tipo_espacio, bloque_id, pabellon, nivel, columna, cuadro, seccion, fila, numero)
 );
 -- Índice principal del filtro de disponibilidad y del resumen de stock
 CREATE INDEX idx_espacios_filtro ON espacios_sepultura (tipo_espacio, tipo_tamano, zona_id, estado);
@@ -785,6 +808,65 @@ INSERT INTO puntos_referencia (tipo, nombre, zona_id) VALUES
   ('cruz_mayor',       'Cruz Mayor',                          NULL),
   ('rotonda',          'Rotonda',                             NULL),
   ('banos',            'Baños',                               NULL);
+
+-- Sección Vieja (nichos): calles, pasajes y referencias del plano.
+INSERT INTO puntos_referencia (tipo, nombre, zona_id, descripcion)
+SELECT t, n, (SELECT id FROM zonas WHERE codigo = 'SV_NICHOS'), d FROM (VALUES
+  ('calle'::tipo_punto_ref,  'San Vicente',              'Eje central (vertical)'),
+  ('calle',                  'Calle Martin Costacchini', 'Límite inferior (calle principal)'),
+  ('calle',                  'Blas Parera',              'Límite derecho'),
+  ('pasaje',                 'San Carlos',               'Pasaje horizontal 1 (de abajo hacia arriba)'),
+  ('pasaje',                 'San Pedro',                'Pasaje horizontal 2'),
+  ('pasaje',                 'San Agustín',              'Pasaje horizontal 3'),
+  ('pasaje',                 'San Juan',                 'Pasaje horizontal 4'),
+  ('pasaje',                 'Santa María',              'Pasaje horizontal 5'),
+  ('pasaje',                 'Santa Teresa',             'Pasaje interno'),
+  ('pasaje',                 'San José',                 'Pasaje interno'),
+  ('pasaje',                 'San Antonio',              'Pasaje interno'),
+  ('otro',                   'Horno crematorio',         'Referencia del sector superior (zona norte)'),
+  ('memorial',               'Memorial',                 'Referencia del sector superior (zona norte)'),
+  ('banos',                  'Baño (Lateral Bloq. 2)',   'Sector superior (zona norte)')
+) AS v(t, n, d);
+
+INSERT INTO bloques_seccion (zona_id, sector, cuadro, nombre, bloque, prop, nota, tiene_nichos, orden)
+SELECT (SELECT id FROM zonas WHERE codigo = 'SV_NICHOS'), sector, cuadro, nombre, bloque, prop, nota, tiene_nichos, orden FROM (VALUES
+  ('Sector superior (zona norte)',        'D',  'Pabellón Ferroviario Julio Juárez', 10, NULL::smallint, NULL,                          TRUE,   1),
+  ('Sector superior (zona norte)',        NULL, 'Pabellón 02 01 03',                  1, NULL, NULL,                                  TRUE,   2),
+  ('Sector superior (zona norte)',        NULL, 'Pabellón PB 02 01 02',               1, NULL, NULL,                                  TRUE,   3),
+  ('Sector superior (zona norte)',        NULL, 'Pabellón SS 02 01 01',               1, NULL, NULL,                                  TRUE,   4),
+  ('Sector superior (zona norte)',        'C',  NULL,                                 9, NULL, 'junto al Bloq. 7',                    TRUE,   5),
+  ('Sector superior (zona norte)',        NULL, 'Lateral',                            2, NULL, 'Baño',                                TRUE,   6),
+  ('Sector superior — izquierda / centro','A',  NULL,                                 4, NULL, NULL,                                  TRUE,   7),
+  ('Sector superior — izquierda / centro','B',  NULL,                                 6, NULL, NULL,                                  TRUE,   8),
+  ('Sector superior — izquierda / centro','W',  NULL,                                 5, NULL, 'dentro del Cuadro B',                 TRUE,   9),
+  ('Sector superior — izquierda / centro','C',  NULL,                                 7, NULL, NULL,                                  TRUE,  10),
+  ('Sector superior — izquierda / centro','V',  NULL,                                 8, NULL, 'dentro del Cuadro C',                 TRUE,  11),
+  ('Sector superior — izquierda / centro',NULL, 'Central',                            3, NULL, NULL,                                  TRUE,  12),
+  ('Fila 1',                              'O',  NULL,                                19,   15, NULL,                                  TRUE,  13),
+  ('Fila 1',                              'P',  NULL,                                25,   17, NULL,                                  TRUE,  14),
+  ('Fila 1',                              'Q',  NULL,                                31,   18, NULL,                                  TRUE,  15),
+  ('Fila 1',                              'R',  NULL,                                34,   13, NULL,                                  TRUE,  16),
+  ('Fila 2',                              NULL, 'Osario',                            14, NULL, NULL,                                  FALSE, 17),
+  ('Fila 2',                              'K',  NULL,                                18,   11, NULL,                                  TRUE,  18),
+  ('Fila 2',                              'L',  NULL,                                24,   12, NULL,                                  TRUE,  19),
+  ('Fila 2',                              'M',  NULL,                                30,   13, NULL,                                  TRUE,  20),
+  ('Fila 2',                              'N',  NULL,                                33,   14, NULL,                                  TRUE,  21),
+  ('Fila 3',                              'G',  NULL,                                17,    7, 'incluye subsección Cruzados',         TRUE,  22),
+  ('Fila 3',                              'H',  NULL,                                23,    8, NULL,                                  TRUE,  23),
+  ('Fila 3',                              'I',  NULL,                                29,    9, NULL,                                  TRUE,  24),
+  ('Fila 3',                              'J',  NULL,                                32,   10, 'incluye Ferroviario 2',               TRUE,  25),
+  ('Fila 4',                              'S',  NULL,                                15,   20, NULL,                                  TRUE,  26),
+  ('Fila 4',                              'C',  NULL,                                22,    3, NULL,                                  TRUE,  27),
+  ('Fila 4',                              'D',  NULL,                                21,    4, NULL,                                  TRUE,  28),
+  ('Fila 4',                              'E',  NULL,                                28,    5, NULL,                                  TRUE,  29),
+  ('Fila 4',                              'F',  NULL,                                27,    6, NULL,                                  TRUE,  30),
+  ('Fila 4',                              NULL, 'Pared Cuadro T',                  NULL, NULL, 'lateral izquierdo',                   TRUE,  31),
+  ('Fila 4',                              NULL, 'N. Chico',                          16, NULL, NULL,                                  TRUE,  32),
+  ('Fila 4',                              NULL, 'Ferroviario 1',                   NULL, NULL, NULL,                                  TRUE,  33),
+  ('Fila 5 (sector inferior / base)',     'A',  NULL,                                20,    1, NULL,                                  TRUE,  34),
+  ('Fila 5 (sector inferior / base)',     NULL, 'Sector C',                        NULL, NULL, 'símbolo herradura / C',               TRUE,  35),
+  ('Fila 5 (sector inferior / base)',     'B',  NULL,                                26,    2, NULL,                                  TRUE,  36)
+) AS v(sector, cuadro, nombre, bloque, prop, nota, tiene_nichos, orden);
 
 -- Plazos de referencia (ajustables por la Dirección).
 INSERT INTO reglas_mantenimiento (tipo_tarea, dias_verde, dias_rojo) VALUES
