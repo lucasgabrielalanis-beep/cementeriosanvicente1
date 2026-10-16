@@ -1,0 +1,661 @@
+openapi: 3.0.3
+info:
+  title: API Operativa — Cementerio San Vicente Parque
+  version: 1.0.0
+  description: |
+    Dirección de Cementerios, Municipalidad de Córdoba.
+    Gestión de zonas, disponibilidad de nichos y fosas, mantenimiento y
+    operaciones de sepultura con trazabilidad y firma digital.
+
+    **Roles**: `directivo` (lectura macro, umbrales, alertas) y
+    `capataz` / `operario` (registro en campo).
+
+    **Firma digital de campo** (obligatoria en todo POST de ejecución):
+    1. El dispositivo arma el objeto `firma.payload` con los datos de la acción,
+       el `nonce` y `firmado_en` (hora del dispositivo).
+    2. Lo serializa en JSON canónico (RFC 8785 / JCS) y calcula SHA-256.
+    3. Firma el hash con su clave privada ECDSA P-256 (no exportable, guardada
+       con WebCrypto en el dispositivo enrolado) → `firma.firma_base64`.
+    4. El operario confirma con su PIN personal (`firma.pin`), que el servidor
+       valida contra `usuarios.pin_hash` y nunca almacena.
+    5. El servidor recalcula el hash, verifica la firma con la clave pública del
+       dispositivo, controla nonce (anti-replay) y desfase horario, y guarda la
+       firma encadenada por hash. La hora oficial es la del servidor.
+servers:
+  - url: https://{host}/api
+    variables:
+      host:
+        default: cementerio.cordoba.gob.ar
+security:
+  - bearerAuth: []
+tags:
+  - name: Zonas
+  - name: Disponibilidad
+  - name: Mantenimiento
+  - name: Operaciones
+  - name: Alertas
+  - name: Dispositivos
+
+paths:
+  /zonas/semaforo:
+    get:
+      tags: [Zonas]
+      summary: Estado de mantenimiento (semáforo) de las 28 zonas y sectores especiales
+      description: Roles directivo, capataz, operario. El color de cada zona es el peor de sus tareas.
+      parameters:
+        - in: query
+          name: color
+          schema: { $ref: '#/components/schemas/ColorSemaforo' }
+          description: Filtrar por color.
+        - in: query
+          name: incluir_especiales
+          schema: { type: boolean, default: true }
+        - in: query
+          name: formato
+          schema: { type: string, enum: [json, geojson], default: json }
+          description: '`geojson` devuelve un FeatureCollection con la geometría de cada zona para pintar el mapa.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SemaforoRespuesta' }
+              example:
+                generado_en: '2026-11-12T09:30:00-03:00'
+                temporada: { nombre: 'Lluvias 2026-2027', factor_plazos: 0.6 }
+                totales: { verde: 19, amarillo: 7, rojo_critico: 7 }
+                zonas:
+                  - zona_id: 5
+                    codigo: Z05
+                    numero: 5
+                    nombre: Zona 5
+                    tipo: parque_fosas
+                    color: rojo_critico
+                    capataz_responsable: { id: 7c1e..., nombre: 'Pérez, Raúl' }
+                    tareas:
+                      - tipo_tarea: corte_cesped
+                        color: rojo_critico
+                        ultima_ejecucion: '2026-10-20T11:02:00-03:00'
+                        dias_transcurridos: 22.9
+                        limite_verde_dias: 9
+                        limite_rojo_dias: 18
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+
+  /disponibilidad/resumen:
+    get:
+      tags: [Disponibilidad]
+      summary: Métricas globales de stock de nichos y fosas y estado de alertas
+      parameters:
+        - in: query
+          name: zona_id
+          schema: { type: integer }
+          description: Si se informa, el resumen se restringe a esa zona.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResumenDisponibilidad' }
+              example:
+                generado_en: '2026-11-12T09:30:00-03:00'
+                faltante_critico: true
+                items:
+                  - tipo_espacio: nicho
+                    tipo_tamano: normal
+                    disponibles: 48
+                    ocupados: 11230
+                    reservados: 12
+                    en_mantenimiento: 30
+                    inhabilitados: 4
+                    total: 11324
+                    umbral_advertencia: 200
+                    umbral_critico: 50
+                    consumo_diario_90d: 3.1
+                    dias_cobertura_estimados: 15
+                    nivel_alerta: critica
+                alertas_abiertas:
+                  - id: 812
+                    tipo: stock_critico
+                    nivel: critica
+                    titulo: 'Faltante crítico: nichos normales (48 disponibles)'
+                    creada_en: '2026-11-10T16:40:00-03:00'
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+
+  /espacios/disponibles:
+    get:
+      tags: [Disponibilidad]
+      summary: Espacios disponibles filtrados por tipo, tamaño y zona
+      parameters:
+        - in: query
+          name: tipo_espacio
+          required: true
+          schema: { $ref: '#/components/schemas/TipoEspacio' }
+        - in: query
+          name: tipo_tamano
+          schema: { $ref: '#/components/schemas/TipoTamano' }
+        - in: query
+          name: zona_id
+          schema: { type: integer }
+        - in: query
+          name: cerca_de
+          schema: { type: string, example: '-31.4521,-64.2210' }
+          description: 'lat,lng — ordena por cercanía (PostGIS KNN) para orientar en campo.'
+        - in: query
+          name: incluir_reservados
+          schema: { type: boolean, default: false }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 50, maximum: 500 }
+        - in: query
+          name: cursor
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total: { type: integer }
+                  siguiente_cursor: { type: string, nullable: true }
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Espacio' }
+              example:
+                total: 7
+                siguiente_cursor: null
+                items:
+                  - id: 18234
+                    codigo: N-5-B-3-41
+                    zona_id: 5
+                    tipo_espacio: nicho
+                    tipo_tamano: extraordinario
+                    estado: disponible
+                    ubicacion: { pabellon: B, nivel: 3, columna: 41 }
+                    coordenadas: { lat: -31.45231, lng: -64.22087 }
+                    version: 4
+        '400': { $ref: '#/components/responses/Validacion' }
+
+  /mantenimiento/completar:
+    post:
+      tags: [Mantenimiento]
+      summary: Registra una tarea de mantenimiento finalizada con firma digital
+      description: |
+        Roles capataz u operario. Si `tarea_id` es nulo se registra una tarea no
+        programada (p. ej. un corte de césped decidido en el momento).
+        Tras registrar, el servidor recalcula el semáforo de la zona.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CompletarTareaRequest' }
+            example:
+              tarea_id: null
+              zona_id: 5
+              tipo_tarea: corte_cesped
+              porcentaje_zona: 100
+              supervisada_por: 7c1e2b9a-0000-4000-8000-000000000001
+              observaciones: 'Se cortó también el borde del camino a la Rotonda.'
+              fotos: ['uploads/2026/11/12/z5-1.jpg']
+              ubicacion: { lat: -31.45231, lng: -64.22087, precision_m: 6 }
+              firma:
+                dispositivo_id: 4a8d...
+                metodos: [firma_dispositivo_ecdsa, pin_reautenticacion]
+                nonce: '01JCDX9P7ZQ7W3'
+                firmado_en: '2026-11-12T09:12:44-03:00'
+                payload_sha256: 9f2c...e1
+                firma_base64: MEUCIQ...
+                pin: '****'
+      responses:
+        '201':
+          description: Tarea registrada y firmada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CompletarTareaRespuesta' }
+              example:
+                tarea_id: 2705abcb-4c50-42ca-b02f-35b887811bc4
+                estado: completada
+                ejecutada_por: { id: 9b0f..., nombre: 'Gómez, Luis', legajo: '20431' }
+                completada_en: '2026-11-12T09:12:51-03:00'
+                firma: { id: 5e1d..., secuencia: 10432, hash_registro: 'c41b...', verificada: true }
+                semaforo_zona: { zona_id: 5, color_anterior: rojo_critico, color_actual: verde }
+        '200':
+          description: Reintento idempotente — devuelve el registro ya existente
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CompletarTareaRespuesta' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/SinPermiso' }
+        '409': { $ref: '#/components/responses/Conflicto' }
+        '422': { $ref: '#/components/responses/FirmaInvalida' }
+
+  /operaciones/descarga-nicho:
+    post:
+      tags: [Operaciones]
+      summary: Registra una descarga / inhumación en nicho o fosa con firma digital
+      description: |
+        Roles capataz u operario. Operación atómica: bloquea el espacio, verifica
+        que esté `disponible` o `reservado`, crea la operación (append-only),
+        pasa el espacio a `ocupado`, guarda el historial y reevalúa el stock.
+        Si el stock cruza un umbral se abre/actualiza la alerta y se notifica
+        al Dashboard Directivo (WebSocket/SSE `alertas`).
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DescargaRequest' }
+            example:
+              espacio_id: 18234
+              version_espacio: 4
+              difunto:
+                apellido_nombre: 'Rodríguez, Ana María'
+                dni: '12345678'
+                fecha_defuncion: '2026-11-11'
+                acta_defuncion: 'A-2026-118823'
+              expediente: 'EXP-CEM-2026-004512'
+              supervisada_por: 7c1e2b9a-0000-4000-8000-000000000001
+              realizada_en: '2026-11-12T10:40:00-03:00'
+              ubicacion: { lat: -31.45231, lng: -64.22087, precision_m: 4 }
+              observaciones: null
+              firma:
+                dispositivo_id: 4a8d...
+                metodos: [firma_dispositivo_ecdsa, pin_reautenticacion, firma_manuscrita]
+                nonce: '01JCDYA0K1V9F2'
+                firmado_en: '2026-11-12T10:40:12-03:00'
+                payload_sha256: 3be0...7a
+                firma_base64: MEQCIF...
+                firma_manuscrita_png_base64: iVBORw0KGgo...
+                pin: '****'
+      responses:
+        '201':
+          description: Descarga registrada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DescargaRespuesta' }
+              example:
+                operacion_id: 0c9a...
+                tipo_operacion: inhumacion
+                espacio: { id: 18234, codigo: N-5-B-3-41, estado: ocupado, version: 5 }
+                ejecutada_por: { id: 9b0f..., nombre: 'Gómez, Luis', legajo: '20431' }
+                realizada_en: '2026-11-12T10:40:00-03:00'
+                registrada_en: '2026-11-12T10:40:15-03:00'
+                firma: { id: 77aa..., secuencia: 10433, hash_registro: '8d02...', verificada: true }
+                stock: { tipo_espacio: nicho, tipo_tamano: extraordinario, disponibles: 9, nivel_alerta: critica }
+        '200':
+          description: Reintento idempotente — devuelve la operación ya registrada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DescargaRespuesta' }
+        '400': { $ref: '#/components/responses/Validacion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/SinPermiso' }
+        '409': { $ref: '#/components/responses/Conflicto' }
+        '422': { $ref: '#/components/responses/FirmaInvalida' }
+
+  /alertas:
+    get:
+      tags: [Alertas]
+      summary: Alertas abiertas (stock y mantenimiento)
+      parameters:
+        - in: query
+          name: nivel
+          schema: { $ref: '#/components/schemas/NivelAlerta' }
+        - in: query
+          name: abiertas
+          schema: { type: boolean, default: true }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Alerta' }
+
+  /alertas/{id}/reconocer:
+    post:
+      tags: [Alertas]
+      summary: Un directivo marca la alerta como vista
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        '204': { description: Reconocida }
+        '403': { $ref: '#/components/responses/SinPermiso' }
+
+  /umbrales-stock:
+    put:
+      tags: [Alertas]
+      summary: Configura umbrales de faltante (solo directivos)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: '#/components/schemas/UmbralStock' }
+      responses:
+        '200': { description: Umbrales guardados y stock reevaluado }
+        '403': { $ref: '#/components/responses/SinPermiso' }
+
+  /dispositivos/enrolar:
+    post:
+      tags: [Dispositivos]
+      summary: Enrola el celular de un capataz/operario (registra su clave pública)
+      description: Requiere la sesión del usuario y la aprobación de un directivo o capataz responsable.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [clave_publica_jwk, descripcion]
+              properties:
+                descripcion: { type: string, example: 'Motorola G54 — Zona 5' }
+                clave_publica_jwk:
+                  type: object
+                  example: { kty: EC, crv: P-256, x: '...', y: '...' }
+      responses:
+        '201':
+          description: Dispositivo enrolado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dispositivo_id: { type: string, format: uuid }
+                  huella_clave: { type: string }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: 'JWT de sesión con claims `sub` (usuario_id), `rol` y `zonas` asignadas.'
+
+  parameters:
+    IdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      required: true
+      schema: { type: string, maxLength: 80 }
+      description: Clave única generada en el dispositivo (ULID). Permite reintentar desde la cola offline sin duplicar registros.
+
+  responses:
+    NoAutenticado:
+      description: Falta o venció el token
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    SinPermiso:
+      description: El rol o la zona asignada no permiten la acción
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Validacion:
+      description: Datos inválidos
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflicto:
+      description: 'El espacio ya no está disponible, cambió de versión, o la tarea ya fue cerrada'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { codigo: ESPACIO_NO_DISPONIBLE, mensaje: 'El espacio N-5-B-3-41 no está disponible (estado: ocupado)' }
+    FirmaInvalida:
+      description: 'La firma no verifica: hash distinto, clave revocada, PIN incorrecto, nonce repetido o desfase horario excesivo'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { codigo: FIRMA_INVALIDA, mensaje: 'El hash del contenido no coincide con el firmado' }
+
+  schemas:
+    ColorSemaforo: { type: string, enum: [verde, amarillo, rojo_critico] }
+    TipoEspacio:   { type: string, enum: [nicho, fosa] }
+    TipoTamano:    { type: string, enum: [normal, extraordinario] }
+    EstadoEspacio: { type: string, enum: [disponible, ocupado, en_mantenimiento, reservado, inhabilitado] }
+    NivelAlerta:   { type: string, enum: [info, advertencia, critica] }
+    TipoTarea:
+      type: string
+      enum: [corte_cesped, desmalezado, poda, limpieza_general, recoleccion_residuos,
+             reparacion_nicho, reparacion_caminos, desagues_pluviales, pintura, otro]
+
+    Coordenadas:
+      type: object
+      required: [lat, lng]
+      properties:
+        lat: { type: number, format: double }
+        lng: { type: number, format: double }
+        precision_m: { type: number }
+
+    UsuarioRef:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        nombre: { type: string }
+        legajo: { type: string }
+
+    FirmaRequest:
+      type: object
+      required: [dispositivo_id, metodos, nonce, firmado_en, payload_sha256, firma_base64, pin]
+      properties:
+        dispositivo_id: { type: string, format: uuid }
+        metodos:
+          type: array
+          minItems: 2
+          items:
+            type: string
+            enum: [firma_dispositivo_ecdsa, pin_reautenticacion, firma_manuscrita, certificado_x509]
+        nonce: { type: string, description: 'ULID único por firma (anti-replay)' }
+        firmado_en: { type: string, format: date-time, description: Hora del dispositivo }
+        payload_sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        firma_base64: { type: string, description: 'Firma ECDSA P-256 (ES256) del payload_sha256' }
+        firma_manuscrita_png_base64: { type: string, description: Trazo opcional en pantalla }
+        pin: { type: string, writeOnly: true, description: 'Se valida y se descarta; nunca se guarda' }
+        offline: { type: boolean, default: false, description: 'true si se firmó sin señal y se sube después' }
+
+    FirmaRespuesta:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        secuencia: { type: integer }
+        hash_registro: { type: string }
+        verificada: { type: boolean }
+
+    TareaSemaforo:
+      type: object
+      properties:
+        tipo_tarea: { $ref: '#/components/schemas/TipoTarea' }
+        color: { $ref: '#/components/schemas/ColorSemaforo' }
+        ultima_ejecucion: { type: string, format: date-time, nullable: true }
+        dias_transcurridos: { type: number, nullable: true }
+        limite_verde_dias: { type: number }
+        limite_rojo_dias: { type: number }
+
+    SemaforoRespuesta:
+      type: object
+      properties:
+        generado_en: { type: string, format: date-time }
+        temporada:
+          type: object
+          nullable: true
+          properties:
+            nombre: { type: string }
+            factor_plazos: { type: number }
+        totales:
+          type: object
+          properties:
+            verde: { type: integer }
+            amarillo: { type: integer }
+            rojo_critico: { type: integer }
+        zonas:
+          type: array
+          items:
+            type: object
+            properties:
+              zona_id: { type: integer }
+              codigo: { type: string }
+              numero: { type: integer, nullable: true }
+              nombre: { type: string }
+              tipo: { type: string, enum: [parque_fosas, nichos, mixta, especial] }
+              color: { $ref: '#/components/schemas/ColorSemaforo' }
+              capataz_responsable: { $ref: '#/components/schemas/UsuarioRef' }
+              tareas:
+                type: array
+                items: { $ref: '#/components/schemas/TareaSemaforo' }
+
+    ItemStock:
+      type: object
+      properties:
+        tipo_espacio: { $ref: '#/components/schemas/TipoEspacio' }
+        tipo_tamano: { $ref: '#/components/schemas/TipoTamano' }
+        disponibles: { type: integer }
+        ocupados: { type: integer }
+        reservados: { type: integer }
+        en_mantenimiento: { type: integer }
+        inhabilitados: { type: integer }
+        total: { type: integer }
+        umbral_advertencia: { type: integer, nullable: true }
+        umbral_critico: { type: integer, nullable: true }
+        consumo_diario_90d: { type: number }
+        dias_cobertura_estimados: { type: integer, nullable: true }
+        nivel_alerta: { $ref: '#/components/schemas/NivelAlerta' }
+
+    ResumenDisponibilidad:
+      type: object
+      properties:
+        generado_en: { type: string, format: date-time }
+        faltante_critico: { type: boolean, description: 'true si algún item está en nivel crítico (muestra el banner)' }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ItemStock' }
+        alertas_abiertas:
+          type: array
+          items: { $ref: '#/components/schemas/Alerta' }
+
+    Espacio:
+      type: object
+      properties:
+        id: { type: integer }
+        codigo: { type: string }
+        zona_id: { type: integer }
+        tipo_espacio: { $ref: '#/components/schemas/TipoEspacio' }
+        tipo_tamano: { $ref: '#/components/schemas/TipoTamano' }
+        estado: { $ref: '#/components/schemas/EstadoEspacio' }
+        ubicacion:
+          type: object
+          description: 'Nicho: pabellon/nivel/columna. Fosa: seccion/fila/numero.'
+          additionalProperties: true
+        coordenadas: { $ref: '#/components/schemas/Coordenadas' }
+        reservado_hasta: { type: string, format: date-time, nullable: true }
+        version: { type: integer }
+
+    CompletarTareaRequest:
+      type: object
+      required: [zona_id, tipo_tarea, ubicacion, firma]
+      properties:
+        tarea_id: { type: string, format: uuid, nullable: true }
+        zona_id: { type: integer }
+        tipo_tarea: { $ref: '#/components/schemas/TipoTarea' }
+        espacio_id: { type: integer, nullable: true }
+        porcentaje_zona: { type: integer, minimum: 1, maximum: 100, default: 100 }
+        supervisada_por: { type: string, format: uuid, nullable: true }
+        observaciones: { type: string, maxLength: 2000 }
+        fotos: { type: array, items: { type: string } }
+        ubicacion: { $ref: '#/components/schemas/Coordenadas' }
+        firma: { $ref: '#/components/schemas/FirmaRequest' }
+
+    CompletarTareaRespuesta:
+      type: object
+      properties:
+        tarea_id: { type: string, format: uuid }
+        estado: { type: string, enum: [completada] }
+        ejecutada_por: { $ref: '#/components/schemas/UsuarioRef' }
+        completada_en: { type: string, format: date-time }
+        firma: { $ref: '#/components/schemas/FirmaRespuesta' }
+        semaforo_zona:
+          type: object
+          properties:
+            zona_id: { type: integer }
+            color_anterior: { $ref: '#/components/schemas/ColorSemaforo' }
+            color_actual: { $ref: '#/components/schemas/ColorSemaforo' }
+
+    DescargaRequest:
+      type: object
+      required: [espacio_id, version_espacio, difunto, realizada_en, ubicacion, firma]
+      properties:
+        espacio_id: { type: integer }
+        version_espacio: { type: integer, description: 'Versión leída; si cambió, 409 (control optimista)' }
+        difunto:
+          type: object
+          required: [apellido_nombre, fecha_defuncion]
+          properties:
+            apellido_nombre: { type: string }
+            dni: { type: string }
+            fecha_defuncion: { type: string, format: date }
+            acta_defuncion: { type: string }
+        expediente: { type: string }
+        supervisada_por: { type: string, format: uuid, nullable: true }
+        realizada_en: { type: string, format: date-time }
+        ubicacion: { $ref: '#/components/schemas/Coordenadas' }
+        observaciones: { type: string, nullable: true }
+        firma: { $ref: '#/components/schemas/FirmaRequest' }
+
+    DescargaRespuesta:
+      type: object
+      properties:
+        operacion_id: { type: string, format: uuid }
+        tipo_operacion: { type: string, enum: [inhumacion] }
+        espacio:
+          type: object
+          properties:
+            id: { type: integer }
+            codigo: { type: string }
+            estado: { $ref: '#/components/schemas/EstadoEspacio' }
+            version: { type: integer }
+        ejecutada_por: { $ref: '#/components/schemas/UsuarioRef' }
+        realizada_en: { type: string, format: date-time }
+        registrada_en: { type: string, format: date-time }
+        firma: { $ref: '#/components/schemas/FirmaRespuesta' }
+        stock: { $ref: '#/components/schemas/ItemStock' }
+
+    Alerta:
+      type: object
+      properties:
+        id: { type: integer }
+        tipo: { type: string, enum: [stock_bajo, stock_critico, mantenimiento_vencido, mantenimiento_critico, firma_invalida, sincronizacion_tardia] }
+        nivel: { $ref: '#/components/schemas/NivelAlerta' }
+        zona_id: { type: integer, nullable: true }
+        titulo: { type: string }
+        detalle: { type: object, additionalProperties: true }
+        creada_en: { type: string, format: date-time }
+        reconocida_en: { type: string, format: date-time, nullable: true }
+
+    UmbralStock:
+      type: object
+      required: [tipo_espacio, tipo_tamano, umbral_advertencia, umbral_critico]
+      properties:
+        tipo_espacio: { $ref: '#/components/schemas/TipoEspacio' }
+        tipo_tamano: { $ref: '#/components/schemas/TipoTamano' }
+        zona_id: { type: integer, nullable: true }
+        umbral_advertencia: { type: integer }
+        umbral_critico: { type: integer }
+        dias_cobertura_critico: { type: integer, nullable: true }
+
+    Error:
+      type: object
+      required: [codigo, mensaje]
+      properties:
+        codigo: { type: string }
+        mensaje: { type: string }
+        detalles: { type: object, additionalProperties: true }
