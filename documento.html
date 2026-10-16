@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cementerio San Vicente Parque — Arquitectura</title>
+<meta name="robots" content="noindex">
+<style>
+  /* Página generada desde README.md con herramientas/generar-pagina.mjs: no editar el contenido a mano. */
+  :root {
+    --bg: #f7f7f5; --fg: #1d1f21; --muted: #5c6166; --line: #d9dcdf;
+    --card: #ffffff; --accent: #1f5f8b; --code: #eef1f4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #15171a; --fg: #e6e8ea; --muted: #a1a7ad; --line: #30353b;
+            --card: #1c1f23; --accent: #7bb6e0; --code: #23272c; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 1.8rem; line-height: 1.25; margin: 0 0 4px; }
+  h2 { margin-top: 2.2rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+  a { color: var(--accent); }
+  table { border-collapse: collapse; width: 100%; display: block; overflow-x: auto; margin: 1rem 0; }
+  th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+  th { background: var(--code); }
+  code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size: .9em; }
+  pre { background: var(--code); padding: 12px; border-radius: 8px; overflow-x: auto; }
+  pre code { padding: 0; background: none; }
+  .mermaid { background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+             padding: 12px; overflow-x: auto; margin: 1rem 0; text-align: center; }
+  .descargas { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0; }
+  .descargas a { border: 1px solid var(--line); background: var(--card); border-radius: 6px;
+                 padding: 6px 12px; text-decoration: none; }
+  #estado { color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <nav class="descargas">
+    <a href="./">← Volver a la app</a>
+    <a href="esquema.sql" download>Descargar esquema.sql</a>
+    <a href="openapi.yaml" download>Descargar openapi.yaml</a>
+    <a href="https://editor.swagger.io/" target="_blank" rel="noopener">Abrir editor Swagger (pegar openapi.yaml)</a>
+  </nav>
+  <article id="contenido">
+<h1>Cementerio San Vicente Parque — Arquitectura operativa</h1>
+<p>Dirección de Cementerios · Municipalidad de Córdoba</p>
+<p><strong>App web (demostración):</strong> <a href="index.html"><code>index.html</code></a> — tablero del directivo y módulo de campo con firma.
+Usuarios de prueba con PIN <code>1234</code>; los datos se guardan solo en el navegador.</p>
+<p>Entregables:</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Entregable</th>
+<th>Archivo</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>Script SQL (DDL) con tablas, ENUM, restricciones de auditoría, índices, vistas y funciones</td>
+<td><a href="esquema.sql"><code>esquema.sql</code></a></td>
+</tr>
+<tr>
+<td>2</td>
+<td>Arquitectura, lógica de alertas y diagramas de flujo</td>
+<td>este documento</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Contratos de API (OpenAPI 3.0)</td>
+<td><a href="openapi.yaml"><code>openapi.yaml</code></a></td>
+</tr>
+</tbody></table>
+<hr>
+<h2>1. Arquitectura técnica</h2>
+<div class="mermaid">flowchart LR
+  subgraph Campo["Campo (celular del capataz / operario)"]
+    PWA["PWA móvil&lt;br/&gt;offline-first&lt;br/&gt;WebCrypto ECDSA P-256&lt;br/&gt;GPS + cámara"]
+    COLA[("IndexedDB&lt;br/&gt;cola offline")]
+    PWA &lt;--&gt; COLA
+  end
+  subgraph Oficina["Dirección (PC / tablet)"]
+    DASH["Dashboard Directivo&lt;br/&gt;mapa + semáforo + stock + alertas"]
+  end
+  subgraph Backend
+    API["API REST&lt;br/&gt;(Node/Express o similar)&lt;br/&gt;JWT + RBAC por rol y zona"]
+    VER["Verificador de firmas&lt;br/&gt;hash JCS + ECDSA + PIN + nonce"]
+    JOB["Job horario&lt;br/&gt;evaluar_semaforo()"]
+    RT["Canal tiempo real&lt;br/&gt;SSE / WebSocket"]
+  end
+  subgraph Datos
+    PG[("PostgreSQL + PostGIS&lt;br/&gt;esquema cementerio")]
+    ST[("Storage de objetos&lt;br/&gt;fotos y trazos de firma")]
+  end
+  PWA -- HTTPS + Idempotency-Key --&gt; API
+  DASH -- HTTPS --&gt; API
+  API --&gt; VER --&gt; PG
+  API --&gt; ST
+  JOB --&gt; PG
+  PG -- LISTEN/NOTIFY alertas --&gt; RT --&gt; DASH</div>
+<p><strong>Decisiones clave</strong></p>
+<ul>
+<li><strong>PostgreSQL + PostGIS</strong> como única fuente de verdad. Las reglas críticas
+(no ocupar dos veces un nicho, no editar lo firmado, encadenar hashes,
+recalcular stock) viven <strong>en la base</strong>, no solo en la API: así ninguna
+integración futura puede saltearlas.</li>
+<li><strong>Geometrías en SRID 4326</strong> (WGS84, lo que da el GPS del celular). Zonas
+como <code>MultiPolygon</code>, puntos de referencia y espacios como <code>Point</code>. Se cargan
+al digitalizar el plano oficial (QGIS → <code>shp2pgsql</code> / <code>ogr2ogr</code>).</li>
+<li><strong>PWA offline-first</strong>: en el predio hay sectores sin señal. Cada acción se
+firma en el momento (hora y GPS del dispositivo) y se encola; al volver la
+señal se sube con su <code>Idempotency-Key</code>, así un reintento nunca duplica.</li>
+<li><strong>Hora oficial = hora del servidor</strong> (<code>registrado_en</code>). La del dispositivo
+se guarda aparte; si difieren más de lo tolerado (p. ej. 10 min sin marca
+offline, 72 h con marca offline) se rechaza o se genera alerta
+<code>sincronizacion_tardia</code>.</li>
+</ul>
+<h3>Modelo de datos (resumen)</h3>
+<div class="mermaid">erDiagram
+  ZONAS ||--o{ ESPACIOS_SEPULTURA : contiene
+  ZONAS ||--o{ PUNTOS_REFERENCIA : ubica
+  ZONAS ||--o{ ASIGNACIONES_ZONA : asigna
+  ZONAS ||--o{ MANTENIMIENTO_TAREAS : recibe
+  USUARIOS ||--o{ ASIGNACIONES_ZONA : tiene
+  USUARIOS ||--o{ DISPOSITIVOS : enrola
+  USUARIOS ||--o{ FIRMAS_DIGITALES : firma
+  DISPOSITIVOS ||--o{ FIRMAS_DIGITALES : genera
+  FIRMAS_DIGITALES ||--o| MANTENIMIENTO_TAREAS : valida
+  FIRMAS_DIGITALES ||--|| OPERACIONES_SEPULTURA : valida
+  ESPACIOS_SEPULTURA ||--o{ OPERACIONES_SEPULTURA : registra
+  ESPACIOS_SEPULTURA ||--o{ HISTORIAL_ESTADOS_ESPACIO : historial
+  DIFUNTOS ||--o{ OPERACIONES_SEPULTURA : involucra
+  REGLAS_MANTENIMIENTO }o--o| ZONAS : "plazo por zona"
+  UMBRALES_STOCK }o--o| ZONAS : "umbral por zona"
+  ALERTAS }o--o| ZONAS : afecta</div>
+<table>
+<thead>
+<tr>
+<th>Tabla</th>
+<th>Para qué</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>zonas</code></td>
+<td>Zonas 1–28 + Cementerio Israelita, Pabellón Amarillo, Horno Crematorio, Memorial, Osario. Tipo: <code>parque_fosas</code>, <code>nichos</code>, <code>mixta</code>, <code>especial</code>. Geometría.</td>
+</tr>
+<tr>
+<td><code>puntos_referencia</code></td>
+<td>Ingresos (Calle Soto y Calle Martin Cartechini), Administración, Cruz Mayor, Rotonda, Osario, Baños… para orientarse en campo.</td>
+</tr>
+<tr>
+<td><code>espacios_sepultura</code></td>
+<td>Nichos (pabellón/nivel/columna) y fosas (sección/fila/número); tamaño <code>normal</code>/<code>extraordinario</code>; estado; <code>version</code> para concurrencia.</td>
+</tr>
+<tr>
+<td><code>firmas_digitales</code></td>
+<td>Una por acción de campo: quién, cuándo (cliente + servidor), qué (hash), dónde (GPS), con qué dispositivo; encadenada por hash. <strong>Inmutable.</strong></td>
+</tr>
+<tr>
+<td><code>mantenimiento_tareas</code></td>
+<td>Corte de césped, desmalezado, etc. No se puede marcar <code>completada</code> sin <code>ejecutada_por</code>, <code>completada_en</code> y <code>firma_id</code>. Cerrada = no editable.</td>
+</tr>
+<tr>
+<td><code>operaciones_sepultura</code></td>
+<td>Inhumación (descarga en nicho/fosa), exhumación, reducción, traslados… <strong>Inmutable</strong>: se corrige con una operación <code>anulacion</code>.</td>
+</tr>
+<tr>
+<td><code>historial_estados_espacio</code></td>
+<td>Cada cambio de estado de un nicho/fosa, con operación y usuario. <strong>Inmutable.</strong></td>
+</tr>
+<tr>
+<td><code>auditoria_eventos</code></td>
+<td>Bitácora general encadenada por hash de altas/bajas/cambios en tablas sensibles. <strong>Inmutable.</strong></td>
+</tr>
+<tr>
+<td><code>reglas_mantenimiento</code> / <code>temporadas_climaticas</code></td>
+<td>Plazos del semáforo y factor de temporada de lluvias.</td>
+</tr>
+<tr>
+<td><code>umbrales_stock</code> / <code>alertas</code></td>
+<td>Umbrales configurables de faltante y alertas abiertas/resueltas (sin duplicados).</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>2. Firma digital y trazabilidad</h2>
+<p>Cada registro de campo responde <strong>quién, cuándo, qué y dónde</strong>, y no se puede
+alterar sin que se note.</p>
+<table>
+<thead>
+<tr>
+<th>Pregunta</th>
+<th>Cómo se garantiza</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Quién</strong></td>
+<td>Sesión JWT del usuario + dispositivo enrolado a su nombre (clave privada no exportable) + PIN personal en el momento de firmar.</td>
+</tr>
+<tr>
+<td><strong>Cuándo</strong></td>
+<td><code>firmado_en_cliente</code> (dispositivo) y <code>registrado_en</code> (servidor, autoritativa, la pone un trigger).</td>
+</tr>
+<tr>
+<td><strong>Qué</strong></td>
+<td><code>payload_sha256</code> = SHA-256 del JSON canónico (RFC 8785) de la acción. El servidor lo recalcula: si alguien toca un dato, no coincide.</td>
+</tr>
+<tr>
+<td><strong>Dónde</strong></td>
+<td>Punto GPS + precisión; se puede validar que caiga dentro de la geometría de la zona (<code>ST_Within</code>).</td>
+</tr>
+<tr>
+<td><strong>Integridad</strong></td>
+<td>Tablas append-only (trigger bloquea UPDATE/DELETE) y cadena de hashes (<code>hash_anterior</code> → <code>hash_registro</code>), verificable recorriendo la secuencia.</td>
+</tr>
+<tr>
+<td><strong>Anti-replay</strong></td>
+<td><code>nonce</code> único por firma + <code>Idempotency-Key</code> por operación.</td>
+</tr>
+</tbody></table>
+<p>Para valor legal pleno (Ley 25.506 de Firma Digital) se puede sumar el método
+<code>certificado_x509</code> con certificados emitidos por la autoridad certificante
+provincial/nacional; el esquema ya lo contempla.</p>
+<hr>
+<h2>3. Lógica de alertas</h2>
+<h3>3.1 Semáforo de mantenimiento</h3>
+<p>Para cada zona y tipo de tarea con regla (<code>reglas_mantenimiento</code>):</p>
+<pre><code>factor   = 0,60 si hoy cae en temporada de lluvias (nov–mar), si no 1,00
+dias     = ahora − última ejecución completada y firmada
+verde        si dias ≤ dias_verde × factor
+amarillo     si dias ≤ dias_rojo  × factor
+rojo crítico si supera, o si nunca se registró
+color de la zona = el peor color entre sus tareas
+</code></pre>
+<p>Valores iniciales de referencia (editables): corte de césped 15 / 30 días
+(en lluvias: 9 / 18), desmalezado 30 / 60, recolección de residuos 3 / 7,
+desagües pluviales 30 / 45. Se puede fijar un plazo distinto por zona.
+Zonas sin césped (Pabellón Amarillo, Horno, Osario) no evalúan corte.</p>
+<h3>3.2 Faltante de nichos y fosas</h3>
+<p>Por cada combinación tipo × tamaño (y opcionalmente por zona):</p>
+<pre><code>crítico      si disponibles ≤ umbral_critico
+             o días de cobertura (disponibles ÷ consumo diario de 90 días) ≤ dias_cobertura_critico
+advertencia  si disponibles ≤ umbral_advertencia
+</code></pre>
+<p>Se reevalúa <strong>automáticamente</strong> cada vez que cambia el estado de un espacio
+(trigger por sentencia) o un umbral. Una alerta abierta no se duplica: se
+actualiza; cuando el stock se recupera, se cierra sola.</p>
+<hr>
+<h2>4. Flujos de trabajo</h2>
+<h3>4.1 Ejecución en campo con firma digital</h3>
+<div class="mermaid">sequenceDiagram
+  autonumber
+  actor C as Capataz / Operario
+  participant P as PWA móvil
+  participant A as API
+  participant V as Verificador
+  participant DB as PostgreSQL
+  participant D as Dashboard Directivo
+
+  C-&gt;&gt;P: Elige zona/espacio y acción (corte de césped o descarga)
+  P-&gt;&gt;P: Toma GPS, fotos y hora del dispositivo
+  C-&gt;&gt;P: Ingresa PIN (+ firma manuscrita opcional)
+  P-&gt;&gt;P: payload JSON canónico → SHA-256 → firma ECDSA (clave no exportable)
+  alt Sin señal
+    P-&gt;&gt;P: Guarda en cola offline con Idempotency-Key
+    Note over P: Reintenta al recuperar señal
+  end
+  P-&gt;&gt;A: POST /mantenimiento/completar o /operaciones/descarga-nicho
+  A-&gt;&gt;V: Verificar hash, firma, PIN, nonce, desfase horario, zona asignada
+  alt Firma inválida
+    V--&gt;&gt;A: rechazo
+    A-&gt;&gt;DB: alerta firma_invalida
+    A--&gt;&gt;P: 422 FIRMA_INVALIDA
+  else Firma válida
+    A-&gt;&gt;DB: INSERT firmas_digitales (trigger: hora servidor + hash encadenado)
+    A-&gt;&gt;DB: completar_tarea() / registrar_descarga() en una transacción
+    DB-&gt;&gt;DB: Bloquea espacio, valida estado, inserta operación inmutable
+    DB-&gt;&gt;DB: Historial de estado + auditoría encadenada
+    DB-&gt;&gt;DB: evaluar_semaforo() / evaluar_stock()
+    DB--&gt;&gt;A: registro + nuevo color / nivel de stock
+    A--&gt;&gt;P: 201 con comprobante (id, hora oficial, hash)
+    DB--&gt;&gt;D: NOTIFY → semáforo y stock en vivo
+  end</div>
+<h3>4.2 Actualización del semáforo</h3>
+<div class="mermaid">flowchart TD
+  T0([Tarea completada y firmada]) --&gt; E
+  CRON([Job cada hora]) --&gt; E
+  E["evaluar_semaforo()"] --&gt; F{"¿Temporada&lt;br/&gt;de lluvias?"}
+  F -- Sí --&gt; F1["Plazos × 0,60"]
+  F -- No --&gt; F2["Plazos × 1,00"]
+  F1 --&gt; C
+  F2 --&gt; C
+  C{"Días desde la&lt;br/&gt;última ejecución"}
+  C -- "≤ verde" --&gt; V["Verde"] --&gt; R1["Cierra alerta de la zona"]
+  C -- "≤ rojo" --&gt; AM["Amarillo"] --&gt; R2["Alerta advertencia"]
+  C -- "&gt; rojo o nunca" --&gt; RO["Rojo crítico"] --&gt; R3["Alerta crítica"]
+  R2 --&gt; N["Dashboard: mapa y listado"]
+  R3 --&gt; N
+  R3 --&gt; P["Capataz responsable: tarea programada sugerida"]</div>
+<h3>4.3 Alerta por faltante de nichos y fosas</h3>
+<div class="mermaid">flowchart TD
+  OP([Descarga / reserva / inhabilitación / liberación]) --&gt; UPD["UPDATE estado en espacios_sepultura"]
+  UM([Directivo cambia umbrales]) --&gt; EV
+  UPD --&gt; TR["Trigger por sentencia"] --&gt; EV["evaluar_stock()"]
+  EV --&gt; Q{"Disponibles vs. umbrales&lt;br/&gt;y días de cobertura"}
+  Q -- "≤ crítico" --&gt; CR["Alerta stock_critico"] --&gt; BAN["Banner rojo 'Faltante crítico'&lt;br/&gt;en Dashboard + aviso (mail/WhatsApp)"]
+  Q -- "≤ advertencia" --&gt; AD["Alerta stock_bajo"] --&gt; WID["Widget en amarillo"]
+  Q -- "OK" --&gt; OK["Cierra alerta si existía"]</div>
+<hr>
+<h2>5. Componentes de interfaz</h2>
+<h3>Dashboard Directivo (escritorio / tablet)</h3>
+<ul>
+<li><strong>Banner &quot;Faltante crítico&quot;</strong> fijo arriba cuando <code>faltante_critico = true</code>,
+con el detalle (p. ej. &quot;Nichos extraordinarios: 9 disponibles · ~12 días de cobertura&quot;).</li>
+<li><strong>Widget de disponibilidad</strong>: 4 tarjetas (Nicho normal, Nicho extraordinario,
+Fosa normal, Fosa extraordinaria) con disponibles, barra contra umbrales,
+días de cobertura y tendencia de 90 días. Click → listado filtrado por zona.</li>
+<li><strong>Mapa del predio</strong> (Leaflet/MapLibre sobre el plano georreferenciado): zonas
+pintadas con el color del semáforo, puntos de referencia (accesos, Cruz Mayor,
+Rotonda, Osario…) y capa de espacios disponibles.</li>
+<li><strong>Tabla de semáforo</strong> de las 28 zonas + sectores especiales, ordenable por
+criticidad, con última ejecución, responsable y días restantes.</li>
+<li><strong>Bandeja de alertas</strong> con &quot;marcar como vista&quot; y configuración de umbrales.</li>
+<li><strong>Trazabilidad</strong>: buscador por espacio, difunto, operario o fecha; muestra
+la cadena completa (operación → firma → hash) y verifica integridad.</li>
+</ul>
+<h3>Módulo de campo (Capataces / Operarios, celular)</h3>
+<ul>
+<li>Inicio con <strong>mis zonas asignadas</strong> y su color, y tareas pendientes.</li>
+<li><strong>Registrar tarea</strong>: zona (preseleccionada por GPS), tipo, % cubierto, fotos,
+observaciones → pantalla de <strong>conformidad</strong> con resumen, PIN y trazo de firma.</li>
+<li><strong>Registrar descarga</strong>: buscar espacio disponible (filtro tipo/tamaño/zona,
+&quot;más cercano&quot;), datos del difunto y expediente, confirmación con firma.</li>
+<li>Botones grandes, alto contraste para sol directo, funciona sin señal con
+indicador de &quot;pendiente de envío&quot;.</li>
+<li>Comprobante final con hora oficial y código de verificación (hash corto).</li>
+</ul>
+<hr>
+<h2>6. Puesta en marcha</h2>
+<ol>
+<li>Crear base PostgreSQL 15+ con PostGIS (p. ej. Supabase) y ejecutar <code>esquema.sql</code>.</li>
+<li>Confirmar con el plano el <strong>tipo de cada zona</strong> (se cargan como <code>mixta</code>).</li>
+<li>Digitalizar geometrías de zonas y puntos de referencia.</li>
+<li>Cargar el padrón de nichos y fosas existente (CSV → <code>COPY</code>).</li>
+<li>Ajustar plazos de mantenimiento, temporada de lluvias y umbrales de stock.</li>
+<li>Dar de alta usuarios y enrolar los celulares de los capataces.</li>
+<li>Programar <code>SELECT cementerio.evaluar_semaforo();</code> cada hora (pg_cron).</li>
+</ol>
+
+</article>
+</main>
+<script src="vendor/mermaid.min.js"></script>
+<script>
+  // Dibuja los diagramas. Si el archivo de diagramas no carga, el texto se sigue viendo igual.
+  if (window.mermaid) {
+    const oscuro = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    mermaid.initialize({ startOnLoad: false, theme: oscuro ? "dark" : "default", securityLevel: "strict" });
+    mermaid.run({ querySelector: ".mermaid" });
+  }
+</script>
+</body>
+</html>
