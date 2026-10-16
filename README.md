@@ -86,8 +86,8 @@ erDiagram
 
 | Tabla | Para qué |
 |---|---|
-| `zonas` | Zonas 1–28 (solo fosas) + Pabellón Amarillo (nichos), Memorial y Osario. Tipo: `parque_fosas`, `nichos`, `mixta`, `especial`. Geometría. |
-| `puntos_referencia` | Ingresos (Calle Soto y Calle Martin Cartechini), Administración, Cruz Mayor, Rotonda, Osario, Baños… para orientarse en campo. |
+| `zonas` | Fosas: Parque (zonas 1–28), Sección Vieja y Sección Nueva. Nichos: Pabellón Amarillo, Central, Lateral y Sección Vieja. Tipo: `parque_fosas`, `nichos`, `mixta`, `especial`. Geometría. |
+| `puntos_referencia` | Ingresos (Calle Soto y Calle Martin Cartechini), Administración, Cruz Mayor, Rotonda, Baños… para orientarse en campo. |
 | `espacios_sepultura` | Nichos (pabellón/nivel/columna) y fosas (sección/fila/número); tamaño `normal`/`extraordinario`; estado; `version` para concurrencia. |
 | `firmas_digitales` | Una por acción de campo: quién, cuándo (cliente + servidor), qué (hash), dónde (GPS), con qué dispositivo; encadenada por hash. **Inmutable.** |
 | `mantenimiento_tareas` | Corte de césped, desmalezado, etc. No se puede marcar `completada` sin `ejecutada_por`, `completada_en` y `firma_id`. Cerrada = no editable. |
@@ -137,7 +137,7 @@ color de la zona = el peor color entre sus tareas
 Valores iniciales de referencia (editables): corte de césped 15 / 30 días
 (en lluvias: 9 / 18), desmalezado 30 / 60, recolección de residuos 3 / 7,
 desagües pluviales 30 / 45. Se puede fijar un plazo distinto por zona.
-Zonas sin césped (Pabellón Amarillo, Osario) no evalúan corte.
+Los sectores de nichos (Pabellón Amarillo, Central, Lateral, Sección Vieja) no evalúan corte de césped.
 
 ### 3.2 Faltante de nichos y fosas
 
@@ -243,8 +243,8 @@ Lo ven todos: directivos, capataces y operarios. Los ajustes de umbrales y plazo
   días de cobertura y tendencia de 90 días. Click → listado filtrado por zona.
 - **Mapa del predio** (Leaflet/MapLibre sobre el plano georreferenciado): zonas
   pintadas con el color del semáforo, puntos de referencia (accesos, Cruz Mayor,
-  Rotonda, Osario…) y capa de espacios disponibles.
-- **Tabla de semáforo** de las 28 zonas + sectores especiales, ordenable por
+  Rotonda…) y capa de espacios disponibles.
+- **Tabla de semáforo** de las zonas del Parque y los sectores de fosas y nichos, ordenable por
   criticidad, con última ejecución, responsable y días restantes.
 - **Bandeja de alertas** con "marcar como vista" y configuración de umbrales.
 - **Trazabilidad**: buscador por espacio, difunto, operario o fecha; muestra
@@ -266,7 +266,7 @@ Lo ven todos: directivos, capataces y operarios. Los ajustes de umbrales y plazo
 ## 6. Puesta en marcha
 
 1. Crear base PostgreSQL 15+ con PostGIS (p. ej. Supabase) y ejecutar `esquema.sql`.
-2. Confirmar con el plano los límites de cada zona (las zonas 1–28 tienen solo fosas; los nichos, en el Pabellón Amarillo).
+2. Confirmar con el plano los límites de cada zona y sector.
 3. Digitalizar geometrías de zonas y puntos de referencia.
 4. Cargar el padrón de nichos y fosas existente (CSV → `COPY`).
 5. Ajustar plazos de mantenimiento, temporada de lluvias y umbrales de stock.
