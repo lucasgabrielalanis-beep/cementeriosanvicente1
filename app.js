@@ -164,6 +164,17 @@ async function datosIniciales() {
 const MAX_CUADROS = 40;
 const PLANTAS = ["Primera planta", "Segunda planta", "Tercera planta"];
 const MAX_FILAS = 10;
+// Operaciones sobre nichos y fosas. Para el cementerio, la DESCARGA desocupa el lugar (igual que la
+// exhumación): el lugar queda libre y vuelve a contar como disponible. La INHUMACIÓN lo ocupa.
+// (Los registros viejos con acción "descarga" eran inhumaciones: se muestran como tales.)
+const OPERACIONES = {
+  descarga: { titulo: "Registrar descarga", accion: "descarga_libera", libera: true, nombre: "Descarga" },
+  exhumacion: { titulo: "Registrar exhumación", accion: "exhumacion", libera: true, nombre: "Exhumación" },
+  inhumacion: { titulo: "Registrar inhumación", accion: "inhumacion", libera: false, nombre: "Inhumación" },
+};
+const ACCIONES_LIBERAN = ["descarga_libera", "exhumacion"];
+const ACCIONES_OCUPAN = ["inhumacion", "descarga"];
+const nombreAccion = (a) => ({ descarga_libera: "Descarga", exhumacion: "Exhumación", inhumacion: "Inhumación", descarga: "Inhumación" }[a] || a);
 const DESTINOS_EXHUMACION = ["Osario", "Cremación", "Reducción", "Traslado a otro lugar del cementerio", "Traslado a otro cementerio", "Otro"];
 // "Segunda planta · Fila 2 · Nicho N° 5". En la Sección Vieja sin la palabra "Nicho" (pedido del dueño).
 const ubNicho = (e, esSeccionVieja) => [e.lugar, `Fila ${e.fila}`, (esSeccionVieja ? "N° " : "Nicho N° ") + e.numero].filter(Boolean).join(" · ");
@@ -275,12 +286,12 @@ function resumenStock() {
     const c = { disponible: 0, ocupado: 0, reservado: 0, en_mantenimiento: 0, inhabilitado: 0 };
     for (const e of espacios) if (e.tipo === tipo && e.tam === tam) c[e.estado]++;
     c.ocupado += ocupadosBase[clave] || 0;
-    const recientes = registros.filter((r) => r.payload.accion === "descarga" && r.payload.datos.tipo === tipo && r.payload.datos.tam === tam && new Date(r.registrado_en) >= desde).length;
+    const recientes = registros.filter((r) => ACCIONES_OCUPAN.includes(r.payload.accion) && r.payload.datos.tipo === tipo && r.payload.datos.tam === tam && new Date(r.registrado_en) >= desde).length;
     const consumo = ((consumoBase90[clave] || 0) + recientes) / 90;
     // Movimientos firmados de los últimos 30 días (descargas ocupan, exhumaciones liberan).
     const hace30 = Date.now() - 30 * DIA;
-    const mov = (accion) => registros.filter((r) => r.payload.accion === accion && r.payload.datos.tipo === tipo && r.payload.datos.tam === tam && new Date(r.registrado_en) >= hace30).length;
-    const descargas30 = mov("descarga"), exhumaciones30 = mov("exhumacion");
+    const mov = (acciones) => registros.filter((r) => acciones.includes(r.payload.accion) && r.payload.datos.tipo === tipo && r.payload.datos.tam === tam && new Date(r.registrado_en) >= hace30).length;
+    const ocupados30 = mov(ACCIONES_OCUPAN), liberados30 = mov(ACCIONES_LIBERAN);
     const cobertura = consumo > 0 ? Math.floor(c.disponible / consumo) : null;
     const u = umbrales[clave];
     let nivel = "ok";
@@ -289,7 +300,7 @@ function resumenStock() {
       else if (c.disponible <= u.adv) nivel = "advertencia";
     }
     const total = Object.values(c).reduce((a, b) => a + b, 0);
-    return { tipo, tam, clave, ...c, total, consumo, cobertura, umbral: u, nivel, descargas30, exhumaciones30 };
+    return { tipo, tam, clave, ...c, total, consumo, cobertura, umbral: u, nivel, ocupados30, liberados30 };
   });
 }
 
@@ -397,7 +408,7 @@ async function firmarYRegistrar(usuario, accion, datos, pin, trazoDataUrl, gps, 
   if (accion === "tarea") {
     const z = Datos.estado.zonas.find((x) => x.id === datos.zona);
     if (z && Datos.estado.reglas[datos.tipo_tarea]) z.ultimas[datos.tipo_tarea] = registrado_en;
-  } else if (accion === "descarga") {
+  } else if (ACCIONES_OCUPAN.includes(accion)) {
     const e = Datos.estado.espacios.find((x) => x.id === datos.espacio_id);
     if (!e && datos.alta_manual) {
       // Nicho o fosa cargado a mano que no figuraba en la lista: se agrega ya ocupado.
@@ -410,8 +421,8 @@ async function firmarYRegistrar(usuario, accion, datos, pin, trazoDataUrl, gps, 
       e.estado = "ocupado";
       delete e.liberado_en;
     }
-  } else if (accion === "exhumacion") {
-    // Exhumación: el lugar queda libre y vuelve a contarse como disponible.
+  } else if (ACCIONES_LIBERAN.includes(accion)) {
+    // Descarga o exhumación: el lugar queda libre y vuelve a contarse como disponible.
     const e = Datos.estado.espacios.find((x) => x.id === datos.espacio_id);
     if (!e && datos.alta_manual) {
       // Lugar ocupado de antes que no estaba cargado uno por uno: se agrega ya libre
@@ -483,7 +494,7 @@ const PESTANAS = {
   directivo: [["resumen", "Resumen"], ["zonas", "Zonas"], ["alertas", "Alertas"], ["registro", "Registro firmado"], ["ajustes", "Ajustes"]],
   // Los tableros (resumen, zonas, alertas, registro) los ven todos; los ajustes, solo directivos.
   // Capataces y operarios arrancan en el mismo Resumen que los directivos.
-  campo: [["resumen", "Resumen"], ["zonas", "Zonas"], ["alertas", "Alertas"], ["registro", "Registro firmado"], ["mis-zonas", "Mis zonas"], ["tarea", "Registrar tarea"], ["descarga", "Registrar descarga"], ["exhumacion", "Registrar exhumación"], ["mis-registros", "Mis registros"]],
+  campo: [["resumen", "Resumen"], ["zonas", "Zonas"], ["alertas", "Alertas"], ["registro", "Registro firmado"], ["mis-zonas", "Mis zonas"], ["tarea", "Registrar tarea"], ["descarga", "Registrar descarga"], ["exhumacion", "Registrar exhumación"], ["inhumacion", "Registrar inhumación"], ["mis-registros", "Mis registros"]],
 };
 const grupoRol = (u) => (u.rol === "directivo" ? "directivo" : "campo");
 
@@ -500,10 +511,10 @@ function render() {
   $("#pestanas").scrollLeft = activa ? Math.max(0, activa.offsetLeft - 16) : 0;
   const vistas = {
     resumen: vistaResumen, zonas: vistaZonas, alertas: vistaAlertas, registro: vistaRegistro, ajustes: vistaAjustes,
-    "mis-zonas": vistaMisZonas, tarea: vistaTarea, descarga: vistaDescarga, exhumacion: vistaExhumacion, "mis-registros": vistaMisRegistros,
+    "mis-zonas": vistaMisZonas, tarea: vistaTarea, descarga: vistaDescarga, exhumacion: vistaExhumacion, inhumacion: vistaInhumacion, "mis-registros": vistaMisRegistros,
   };
   $("#vista").innerHTML = vistas[UI.pestana]();
-  if (UI.pestana === "descarga" || UI.pestana === "exhumacion") actualizarListaEspacios();
+  if (OPERACIONES[UI.pestana]) actualizarListaEspacios();
 }
 
 /* ───────────────────────── Vistas ───────────────────────── */
@@ -552,7 +563,7 @@ function tarjetaStock(s) {
     <div class="muted chico">Crítico ≤ ${u.crit} · Advertencia ≤ ${u.adv}</div>
     <div class="chico" style="margin-top:8px">${s.cobertura !== null ? `Cobertura estimada: <strong>~${fmtNum(s.cobertura)} días</strong> (${fmtNum(s.consumo, 1)} por día)` : "Sin consumo reciente"}</div>
     <div class="muted chico">Reservados ${s.reservado} · En mantenimiento ${s.en_mantenimiento} · Inhabilitados ${s.inhabilitado}</div>
-    <div class="chico" style="margin-top:6px">Últimos 30 días: <strong>${s.descargas30}</strong> ${s.descargas30 === 1 ? "descarga" : "descargas"} · <strong style="color:var(--verde)">${s.exhumaciones30}</strong> ${s.exhumaciones30 === 0 ? "exhumaciones" : s.exhumaciones30 === 1 ? "exhumación (liberó un lugar)" : "exhumaciones (liberaron lugares)"}</div>
+    <div class="chico" style="margin-top:6px">Últimos 30 días: <strong style="color:var(--verde)">+${s.liberados30}</strong> ${s.liberados30 === 1 ? "liberado" : "liberados"} (descargas y exhumaciones) · <strong>−${s.ocupados30}</strong> ${s.ocupados30 === 1 ? "ocupado" : "ocupados"} (inhumaciones)</div>
     <div class="ver-listado">${s.disponible ? "Tocá para ver el listado →" : "No hay disponibles"}</div>
   </div>`;
 }
@@ -742,8 +753,8 @@ function vistaAlertas() {
 function descripcionRegistro(r) {
   const d = r.payload.datos;
   if (r.payload.accion === "tarea") return `${nombreTarea(d.tipo_tarea)} en ${esc(nombreZona(d.zona))} (${d.porcentaje}%)${d.fotos_sha256?.length ? ` · ${d.fotos_sha256.length} ${d.fotos_sha256.length === 1 ? "foto" : "fotos"}` : ""}`;
-  if (r.payload.accion === "exhumacion") return `Exhumación en ${d.tipo} ${d.tam} — ${esc(d.ubicacion)} (${esc(nombreZona(d.zona))}) · ${esc(d.difunto.nombre)} → ${esc(d.destino)} · <strong>quedó libre</strong>`;
-  return `Descarga en ${d.tipo} ${d.tam} — ${esc(d.ubicacion)} (${esc(nombreZona(d.zona))}) · ${esc(d.difunto.nombre)}`;
+  if (ACCIONES_LIBERAN.includes(r.payload.accion)) return `${nombreAccion(r.payload.accion)} en ${d.tipo} ${d.tam} — ${esc(d.ubicacion)} (${esc(nombreZona(d.zona))}) · ${esc(d.difunto.nombre)} → ${esc(d.destino)} · <strong>quedó libre</strong>`;
+  return `Inhumación en ${d.tipo} ${d.tam} — ${esc(d.ubicacion)} (${esc(nombreZona(d.zona))}) · ${esc(d.difunto.nombre)} · <strong>quedó ocupado</strong>`;
 }
 const nombreZona = (id) => Datos.estado.zonas.find((z) => z.id === id)?.nombre || "—";
 
@@ -751,8 +762,8 @@ const nombreZona = (id) => Datos.estado.zonas.find((z) => z.id === id)?.nombre |
 function tablaMovimientos(regs) {
   const efecto = (r) => {
     const d = r.payload.datos;
-    if (r.payload.accion === "descarga") return `<span class="chip advertencia">−1 ${d.tipo === "nicho" ? "nicho" : "fosa"} libre</span>`;
-    if (r.payload.accion === "exhumacion") return `<span class="chip ok">+1 ${d.tipo === "nicho" ? "nicho" : "fosa"} libre</span>`;
+    if (ACCIONES_OCUPAN.includes(r.payload.accion)) return `<span class="chip advertencia">−1 ${d.tipo === "nicho" ? "nicho" : "fosa"} libre</span>`;
+    if (ACCIONES_LIBERAN.includes(r.payload.accion)) return `<span class="chip ok">+1 ${d.tipo === "nicho" ? "nicho" : "fosa"} libre</span>`;
     return `<span class="chip info">Mantenimiento</span>`;
   };
   return `<div class="tabla-scroll"><table>
@@ -793,7 +804,7 @@ function detalleRegistro(sec) {
     <div class="resumen-firma"><dl>
       <dt>Qué</dt><dd>${descripcionRegistro(r)}</dd>
       ${p.datos.observaciones ? `<dt>Observaciones</dt><dd>${esc(p.datos.observaciones)}</dd>` : ""}
-      ${p.accion === "descarga" || p.accion === "exhumacion" ? `<dt>${p.accion === "exhumacion" ? "Exhumado/a" : "Difunto"}</dt><dd>${esc(p.datos.difunto.nombre)}${p.datos.difunto.dni ? " · DNI " + esc(p.datos.difunto.dni) : ""}${p.datos.difunto.fecha ? " · fallecimiento " + esc(p.datos.difunto.fecha) : ""}</dd>${p.datos.destino ? `<dt>Destino</dt><dd>${esc(p.datos.destino)}</dd>` : ""}<dt>Expediente</dt><dd>${esc(p.datos.expediente || "—")}</dd>` : ""}
+      ${p.datos.difunto ? `<dt>${ACCIONES_LIBERAN.includes(p.accion) ? "Persona" : "Difunto"}</dt><dd>${esc(p.datos.difunto.nombre)}${p.datos.difunto.dni ? " · DNI " + esc(p.datos.difunto.dni) : ""}${p.datos.difunto.fecha ? " · fallecimiento " + esc(p.datos.difunto.fecha) : ""}</dd>${p.datos.destino ? `<dt>Destino</dt><dd>${esc(p.datos.destino)}</dd>` : ""}<dt>Expediente</dt><dd>${esc(p.datos.expediente || "—")}</dd>` : ""}
       <dt>Quién</dt><dd>${esc(p.usuario.nombre)} · legajo ${esc(p.usuario.legajo)}</dd>
       <dt>Hora de registro</dt><dd>${fmtFecha(r.registrado_en)}</dd>
       <dt>Hora del celular</dt><dd>${fmtFecha(p.hora_dispositivo)}</dd>
@@ -891,16 +902,17 @@ function vistaTarea() {
 
 function vistaDescarga() { return vistaOperacion("descarga"); }
 function vistaExhumacion() { return vistaOperacion("exhumacion"); }
+function vistaInhumacion() { return vistaOperacion("inhumacion"); }
 
-// Descarga (inhumación: el lugar pasa a ocupado) o exhumación (el lugar queda libre y vuelve a contar
-// como disponible en el Resumen). Mismo formulario de ubicación: zona + planta/cuadro/bloque + fila + número.
+// Descarga y exhumación: el lugar queda libre y vuelve a contar como disponible en el Resumen.
+// Inhumación: el lugar pasa a ocupado. Mismo formulario de ubicación: zona + planta/cuadro/bloque + fila + número.
 function vistaOperacion(modo) {
-  const exh = modo === "exhumacion";
+  const exh = OPERACIONES[modo].libera;
   const b = UI.borrador?.accion === modo ? UI.borrador : { tipo: "nicho", tam: "normal", zona: "" };
   UI.filtroDescarga = { tipo: b.tipo, tam: b.tam, zona: b.zona, planta: "", lugar: "", cuadro: "", fila: "" };
   const op = (campo, valor, txt) => `<button type="button" class="opcion" data-elegir="${campo}" data-valor="${valor}" aria-pressed="${b[campo] === valor}">${txt}</button>`;
-  return `<h1>${exh ? "Registrar exhumación" : "Registrar descarga"}</h1>
-    <p class="muted">${exh ? "Al firmar, el nicho o la fosa queda <strong>libre</strong> y vuelve a contarse como disponible en el Resumen." : "Inhumación en nicho o fosa. Elegí el espacio, cargá los datos y firmá."}</p>
+  return `<h1>${OPERACIONES[modo].titulo}</h1>
+    <p class="muted">${exh ? "Al firmar, el nicho o la fosa queda <strong>libre</strong> y vuelve a contarse como disponible en el Resumen." : "El nicho o la fosa pasa a <strong>ocupado</strong> y se descuenta de los disponibles."}</p>
     <form class="form" data-form="${modo}">
       <div class="dos-col">
         <fieldset style="border:0;padding:0;margin:0"><legend style="font-weight:600;margin-bottom:6px">Tipo</legend>
@@ -919,7 +931,7 @@ function vistaOperacion(modo) {
         <div><span class="muted chico">${exh ? "Ocupados registrados en esta ubicación" : "Libres en esta ubicación"} (tocá uno para completarlo):</span>
           <ul class="espacios-libres" id="sugeridos"></ul></div>
       </div>
-      <h2 style="margin:4px 0 0">${exh ? "Datos de la persona exhumada" : "Datos de la persona fallecida"}</h2>
+      <h2 style="margin:4px 0 0">${exh ? "Datos de la persona (restos retirados)" : "Datos de la persona fallecida"}</h2>
       <label>Apellido y nombre<input name="dif_nombre" required maxlength="120" autocomplete="off"></label>
       <div class="dos-col">
         <label>DNI <span class="muted">(opcional)</span><input name="dif_dni" inputmode="numeric" maxlength="12" autocomplete="off"></label>
@@ -934,11 +946,11 @@ function vistaOperacion(modo) {
 }
 
 function actualizarListaEspacios() {
-  const form = $('form[data-form="descarga"], form[data-form="exhumacion"]');
+  const form = $('form[data-form="descarga"], form[data-form="exhumacion"], form[data-form="inhumacion"]');
   if (!form) return;
   const f = UI.filtroDescarga;
   // Descarga: se buscan lugares libres. Exhumación: lugares ocupados (que quedarán libres).
-  const exh = form.dataset.form === "exhumacion";
+  const exh = OPERACIONES[form.dataset.form].libera;
   const palabra = exh ? "ocupados" : "libres";
   const disponibles = Datos.estado.espacios.filter((e) => e.tipo === f.tipo && e.tam === f.tam && e.estado === (exh ? "ocupado" : "disponible"));
   const porZona = {};
@@ -1134,7 +1146,7 @@ document.addEventListener("click", async (ev) => {
     const form = el.closest("form");
     form.querySelectorAll(`[data-elegir="${d.elegir}"]`).forEach((b) => b.setAttribute("aria-pressed", String(b === el)));
     form.elements[d.elegir].value = d.valor;
-    if (form.dataset.form === "descarga" || form.dataset.form === "exhumacion") { Object.assign(UI.filtroDescarga, { [d.elegir]: d.valor, planta: "", lugar: "", cuadro: "", fila: "" }); actualizarListaEspacios(); }
+    if (OPERACIONES[form.dataset.form]) { Object.assign(UI.filtroDescarga, { [d.elegir]: d.valor, planta: "", lugar: "", cuadro: "", fila: "" }); actualizarListaEspacios(); }
     return;
   }
   switch (d.accion) {
@@ -1197,8 +1209,8 @@ document.addEventListener("submit", async (ev) => {
       UI.borrador = { accion: "tarea", ...datos, observaciones: datos.observaciones || "" };
       abrirFirma("tarea", datos, `<dt>Tarea</dt><dd>${nombreTarea(datos.tipo_tarea)} (${datos.porcentaje}%)</dd><dt>Zona</dt><dd>${esc(nombreZona(datos.zona))}</dd>${datos.observaciones ? `<dt>Obs.</dt><dd>${esc(datos.observaciones)}</dd>` : ""}${UI.fotos.length ? `<dt>Fotos</dt><dd>${UI.fotos.length}</dd>` : ""}`);
       UI.firmaPendiente.fotos = UI.fotos.slice();
-    } else if (tipoForm === "descarga" || tipoForm === "exhumacion") {
-      const exh = tipoForm === "exhumacion";
+    } else if (OPERACIONES[tipoForm]) {
+      const exh = OPERACIONES[tipoForm].libera;
       let esp, altaManual = false;
       const fd = UI.filtroDescarga;
       const zona = Datos.estado.zonas.find((z) => z.id === Number(fd.zona));
@@ -1259,14 +1271,14 @@ document.addEventListener("submit", async (ev) => {
         if (!datos.difunto.fecha) delete datos.difunto.fecha;
       }
       UI.borrador = { accion: tipoForm, tipo: esp.tipo, tam: esp.tam, zona: UI.filtroDescarga.zona };
-      abrirFirma(tipoForm, datos, `<dt>Zona</dt><dd>${esc(nombreZona(esp.zona))}</dd>${esp.planta ? `<dt>Planta</dt><dd>${PLANTAS[esp.planta - 1]}</dd>` : ""}<dt>Espacio</dt><dd>${esc(esp.ub)}${esp.tam === "extraordinario" ? " · <strong>" + nombreTamano(esp) + "</strong>" : ""}${altaManual ? `<br><span class="muted chico">Cargado a mano: no figuraba en la lista de ${exh ? "ocupados" : "libres"}, se agrega al registro.</span>` : ""}</dd><dt>${exh ? "Exhumado/a" : "Difunto"}</dt><dd>${esc(datos.difunto.nombre)}${datos.difunto.dni ? " · DNI " + esc(datos.difunto.dni) : ""}</dd>${exh ? `<dt>Destino</dt><dd>${esc(datos.destino)}</dd><dt>Resultado</dt><dd><strong>El lugar queda libre y disponible.</strong></dd>` : ""}`);
+      abrirFirma(OPERACIONES[tipoForm].accion, datos, `<dt>Zona</dt><dd>${esc(nombreZona(esp.zona))}</dd>${esp.planta ? `<dt>Planta</dt><dd>${PLANTAS[esp.planta - 1]}</dd>` : ""}<dt>Espacio</dt><dd>${esc(esp.ub)}${esp.tam === "extraordinario" ? " · <strong>" + nombreTamano(esp) + "</strong>" : ""}${altaManual ? `<br><span class="muted chico">Cargado a mano: no figuraba en la lista de ${exh ? "ocupados" : "libres"}, se agrega al registro.</span>` : ""}</dd><dt>${exh ? "Persona" : "Difunto"}</dt><dd>${esc(datos.difunto.nombre)}${datos.difunto.dni ? " · DNI " + esc(datos.difunto.dni) : ""}</dd>${exh ? `<dt>Destino</dt><dd>${esc(datos.destino)}</dd><dt>Resultado</dt><dd><strong>El lugar queda libre y disponible.</strong></dd>` : ""}`);
     } else if (tipoForm === "firma") {
       const c = $("#lienzo");
       if (!c.trazos) { avisar("Falta tu firma en el recuadro."); return; }
       const boton = form.querySelector('button[type="submit"]');
       boton.disabled = true; boton.textContent = "Firmando…";
       const { accion, datos, gps, fotos = [] } = UI.firmaPendiente;
-      const mueveStock = accion === "descarga" || accion === "exhumacion";
+      const mueveStock = ACCIONES_LIBERAN.includes(accion) || ACCIONES_OCUPAN.includes(accion);
       const disponiblesDe = () => resumenStock().find((s) => s.tipo === datos.tipo && s.tam === datos.tam)?.disponible;
       const antes = mueveStock ? disponiblesDe() : null;
       let reg;
@@ -1278,9 +1290,9 @@ document.addEventListener("submit", async (ev) => {
       abrirModal(`<div class="comprobante">
         <h2 style="margin-top:0">Registrado ✔</h2>
         <p>${descripcionRegistro(reg)}</p>
-        ${mueveStock ? `<div class="banner ${accion === "exhumacion" ? "ok" : "advertencia"}" style="justify-content:center;margin:8px 0">
+        ${mueveStock ? `<div class="banner ${ACCIONES_LIBERAN.includes(accion) ? "ok" : "advertencia"}" style="justify-content:center;margin:8px 0">
           <div><strong>${nombreStock(datos.tipo, datos.tam)} disponibles: ${fmtNum(antes)} → ${fmtNum(disponiblesDe())}</strong>
-          ${accion === "exhumacion" ? "El lugar quedó libre y ya figura en el Resumen." : "El lugar quedó ocupado y ya se descontó en el Resumen."}</div></div>` : ""}
+          ${ACCIONES_LIBERAN.includes(accion) ? "El lugar quedó libre: ya figura como disponible en el Resumen." : "El lugar quedó ocupado y ya se descontó en el Resumen."}</div></div>` : ""}
         <p class="muted">${fmtFecha(reg.registrado_en)} · ${esc(UI.usuario.nombre)}</p>
         <p class="muted chico">Código de verificación</p>
         <p class="codigo mono">${codigoCorto(reg.hash_registro)}</p>

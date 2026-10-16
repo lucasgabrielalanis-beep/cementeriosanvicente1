@@ -173,7 +173,7 @@ offline, 72 h con marca offline) se rechaza o se genera alerta
 </tr>
 <tr>
 <td><code>operaciones_sepultura</code></td>
-<td>Inhumación (descarga en nicho/fosa), exhumación, reducción, traslados… <strong>Inmutable</strong>: se corrige con una operación <code>anulacion</code>.</td>
+<td>Inhumación (ocupa el lugar), descarga y exhumación (lo dejan libre), reducción, traslados… <strong>Inmutable</strong>: se corrige con una operación <code>anulacion</code>.</td>
 </tr>
 <tr>
 <td><code>historial_estados_espacio</code></td>
@@ -266,7 +266,7 @@ actualiza; cuando el stock se recupera, se cierra sola.</p>
   participant DB as PostgreSQL
   participant D as Dashboard Directivo
 
-  C-&gt;&gt;P: Elige zona/espacio y acción (corte de césped o descarga)
+  C-&gt;&gt;P: Elige zona/espacio y acción (corte de césped, descarga, exhumación o inhumación)
   P-&gt;&gt;P: Toma GPS, fotos y hora del dispositivo
   C-&gt;&gt;P: Ingresa PIN (+ firma manuscrita opcional)
   P-&gt;&gt;P: payload JSON canónico → SHA-256 → firma ECDSA (clave no exportable)
@@ -274,7 +274,7 @@ actualiza; cuando el stock se recupera, se cierra sola.</p>
     P-&gt;&gt;P: Guarda en cola offline con Idempotency-Key
     Note over P: Reintenta al recuperar señal
   end
-  P-&gt;&gt;A: POST /mantenimiento/completar o /operaciones/descarga-nicho
+  P-&gt;&gt;A: POST /mantenimiento/completar, /operaciones/descarga, /operaciones/exhumacion o /operaciones/inhumacion
   A-&gt;&gt;V: Verificar hash, firma, PIN, nonce, desfase horario, zona asignada
   alt Firma inválida
     V--&gt;&gt;A: rechazo
@@ -282,7 +282,7 @@ actualiza; cuando el stock se recupera, se cierra sola.</p>
     A--&gt;&gt;P: 422 FIRMA_INVALIDA
   else Firma válida
     A-&gt;&gt;DB: INSERT firmas_digitales (trigger: hora servidor + hash encadenado)
-    A-&gt;&gt;DB: completar_tarea() / registrar_descarga() en una transacción
+    A-&gt;&gt;DB: completar_tarea() / registrar_liberacion() / registrar_inhumacion() en una transacción
     DB-&gt;&gt;DB: Bloquea espacio, valida estado, inserta operación inmutable
     DB-&gt;&gt;DB: Historial de estado + auditoría encadenada
     DB-&gt;&gt;DB: evaluar_semaforo() / evaluar_stock()
@@ -308,7 +308,7 @@ actualiza; cuando el stock se recupera, se cierra sola.</p>
   R3 --&gt; P["Capataz responsable: tarea programada sugerida"]</div>
 <h3>4.3 Alerta por faltante de nichos y fosas</h3>
 <div class="mermaid">flowchart TD
-  OP([Descarga / reserva / inhabilitación / liberación]) --&gt; UPD["UPDATE estado en espacios_sepultura"]
+  OP([Descarga o exhumación (libera) / inhumación (ocupa) / reserva / inhabilitación]) --&gt; UPD["UPDATE estado en espacios_sepultura"]
   UM([Directivo cambia umbrales]) --&gt; EV
   UPD --&gt; TR["Trigger por sentencia"] --&gt; EV["evaluar_stock()"]
   EV --&gt; Q{"Disponibles vs. umbrales&lt;br/&gt;y días de cobertura"}
@@ -339,8 +339,8 @@ la cadena completa (operación → firma → hash) y verifica integridad.</li>
 <li>Inicio con <strong>mis zonas asignadas</strong> y su color, y tareas pendientes.</li>
 <li><strong>Registrar tarea</strong>: zona (preseleccionada por GPS), tipo, % cubierto, fotos,
 observaciones → pantalla de <strong>conformidad</strong> con resumen, PIN y trazo de firma.</li>
-<li><strong>Registrar descarga</strong>: buscar espacio disponible (filtro tipo/tamaño/zona,
-&quot;más cercano&quot;), datos del difunto y expediente, confirmación con firma.</li>
+<li><strong>Registrar descarga / exhumación</strong>: zona y ubicación (planta, cuadro o bloque, fila y número a mano), datos de la persona y destino de los restos; al firmar el lugar queda libre.</li>
+<li><strong>Registrar inhumación</strong>: misma carga de ubicación y datos del difunto; al firmar el lugar queda ocupado.</li>
 <li>Botones grandes, alto contraste para sol directo, funciona sin señal con
 indicador de &quot;pendiente de envío&quot;.</li>
 <li>Comprobante final con hora oficial y código de verificación (hash corto).</li>

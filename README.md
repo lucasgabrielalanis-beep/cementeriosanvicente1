@@ -93,7 +93,7 @@ erDiagram
 | `espacios_sepultura` | Nichos (pabellón/nivel/columna) y fosas (zonas 1–30: zona, cuadro 1–40 y fosa; secciones: sección/fila/número); tamaño `normal`/`extraordinario`; estado; `version` para concurrencia. |
 | `firmas_digitales` | Una por acción de campo: quién, cuándo (cliente + servidor), qué (hash), dónde (GPS), con qué dispositivo; encadenada por hash. **Inmutable.** |
 | `mantenimiento_tareas` | Corte de césped, limpieza de calles, relleno de fosas, pintura, etc. Fotos opcionales como constancia. No se puede marcar `completada` sin `ejecutada_por`, `completada_en` y `firma_id`. Cerrada = no editable. |
-| `operaciones_sepultura` | Inhumación (descarga en nicho/fosa), exhumación, reducción, traslados… **Inmutable**: se corrige con una operación `anulacion`. |
+| `operaciones_sepultura` | Inhumación (ocupa el lugar), descarga y exhumación (lo dejan libre), reducción, traslados… **Inmutable**: se corrige con una operación `anulacion`. |
 | `historial_estados_espacio` | Cada cambio de estado de un nicho/fosa, con operación y usuario. **Inmutable.** |
 | `auditoria_eventos` | Bitácora general encadenada por hash de altas/bajas/cambios en tablas sensibles. **Inmutable.** |
 | `reglas_mantenimiento` / `temporadas_climaticas` | Plazos del semáforo y factor de temporada de lluvias. |
@@ -170,7 +170,7 @@ sequenceDiagram
   participant DB as PostgreSQL
   participant D as Dashboard Directivo
 
-  C->>P: Elige zona/espacio y acción (corte de césped o descarga)
+  C->>P: Elige zona/espacio y acción (corte de césped, descarga, exhumación o inhumación)
   P->>P: Toma GPS, fotos y hora del dispositivo
   C->>P: Ingresa PIN (+ firma manuscrita opcional)
   P->>P: payload JSON canónico → SHA-256 → firma ECDSA (clave no exportable)
@@ -178,7 +178,7 @@ sequenceDiagram
     P->>P: Guarda en cola offline con Idempotency-Key
     Note over P: Reintenta al recuperar señal
   end
-  P->>A: POST /mantenimiento/completar o /operaciones/descarga-nicho
+  P->>A: POST /mantenimiento/completar, /operaciones/descarga, /operaciones/exhumacion o /operaciones/inhumacion
   A->>V: Verificar hash, firma, PIN, nonce, desfase horario, zona asignada
   alt Firma inválida
     V-->>A: rechazo
@@ -186,7 +186,7 @@ sequenceDiagram
     A-->>P: 422 FIRMA_INVALIDA
   else Firma válida
     A->>DB: INSERT firmas_digitales (trigger: hora servidor + hash encadenado)
-    A->>DB: completar_tarea() / registrar_descarga() en una transacción
+    A->>DB: completar_tarea() / registrar_liberacion() / registrar_inhumacion() en una transacción
     DB->>DB: Bloquea espacio, valida estado, inserta operación inmutable
     DB->>DB: Historial de estado + auditoría encadenada
     DB->>DB: evaluar_semaforo() / evaluar_stock()
@@ -220,7 +220,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-  OP([Descarga / reserva / inhabilitación / liberación]) --> UPD["UPDATE estado en espacios_sepultura"]
+  OP([Descarga o exhumación (libera) / inhumación (ocupa) / reserva / inhabilitación]) --> UPD["UPDATE estado en espacios_sepultura"]
   UM([Directivo cambia umbrales]) --> EV
   UPD --> TR["Trigger por sentencia"] --> EV["evaluar_stock()"]
   EV --> Q{"Disponibles vs. umbrales<br/>y días de cobertura"}
@@ -256,8 +256,8 @@ Lo ven todos: directivos, capataces y operarios. Los ajustes de umbrales y plazo
 - Inicio con **mis zonas asignadas** y su color, y tareas pendientes.
 - **Registrar tarea**: zona (preseleccionada por GPS), tipo, % cubierto, fotos,
   observaciones → pantalla de **conformidad** con resumen, PIN y trazo de firma.
-- **Registrar descarga**: buscar espacio disponible (filtro tipo/tamaño/zona,
-  "más cercano"), datos del difunto y expediente, confirmación con firma.
+- **Registrar descarga / exhumación**: zona y ubicación (planta, cuadro o bloque, fila y número a mano), datos de la persona y destino de los restos; al firmar el lugar queda libre.
+- **Registrar inhumación**: misma carga de ubicación y datos del difunto; al firmar el lugar queda ocupado.
 - Botones grandes, alto contraste para sol directo, funciona sin señal con
   indicador de "pendiente de envío".
 - Comprobante final con hora oficial y código de verificación (hash corto).
