@@ -55,8 +55,8 @@ CREATE TYPE tipo_tamano        AS ENUM ('normal', 'extraordinario');
 CREATE TYPE estado_espacio     AS ENUM (
   'disponible', 'ocupado', 'en_mantenimiento', 'reservado', 'inhabilitado');
 CREATE TYPE tipo_tarea_mant    AS ENUM (
-  'corte_cesped', 'desmalezado', 'poda', 'limpieza_general', 'recoleccion_residuos',
-  'reparacion_nicho', 'reparacion_caminos', 'desagues_pluviales', 'pintura', 'otro');
+  'corte_cesped', 'limpieza_calles', 'recoleccion_residuos', 'relleno_fosas',
+  'pintura', 'poda', 'limpieza_general', 'reparacion_nicho', 'otro');
 CREATE TYPE estado_tarea       AS ENUM (
   'programada', 'asignada', 'en_curso', 'completada', 'cancelada');
 CREATE TYPE tipo_operacion     AS ENUM (
@@ -784,9 +784,7 @@ INSERT INTO puntos_referencia (tipo, nombre, zona_id) VALUES
 -- Plazos de referencia (ajustables por la Dirección).
 INSERT INTO reglas_mantenimiento (tipo_tarea, dias_verde, dias_rojo) VALUES
   ('corte_cesped',         15, 30),
-  ('desmalezado',          30, 60),
-  ('recoleccion_residuos',  3,  7),
-  ('desagues_pluviales',   30, 45);
+  ('recoleccion_residuos',  3,  7);
 
 -- Temporada de lluvias: los plazos se reducen al 60 %.
 INSERT INTO temporadas_climaticas (nombre, desde, hasta, factor_plazos) VALUES

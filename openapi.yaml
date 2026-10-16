@@ -427,8 +427,8 @@ components:
     NivelAlerta:   { type: string, enum: [info, advertencia, critica] }
     TipoTarea:
       type: string
-      enum: [corte_cesped, desmalezado, poda, limpieza_general, recoleccion_residuos,
-             reparacion_nicho, reparacion_caminos, desagues_pluviales, pintura, otro]
+      enum: [corte_cesped, limpieza_calles, recoleccion_residuos, relleno_fosas,
+             pintura, poda, limpieza_general, reparacion_nicho, otro]
 
     Coordenadas:
       type: object

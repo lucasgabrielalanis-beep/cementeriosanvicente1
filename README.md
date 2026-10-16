@@ -90,7 +90,7 @@ erDiagram
 | `puntos_referencia` | Ingresos (Calle Soto y Calle Martin Cartechini), Administración, Cruz Mayor, Rotonda, Baños… para orientarse en campo. |
 | `espacios_sepultura` | Nichos (pabellón/nivel/columna) y fosas (sección/fila/número); tamaño `normal`/`extraordinario`; estado; `version` para concurrencia. |
 | `firmas_digitales` | Una por acción de campo: quién, cuándo (cliente + servidor), qué (hash), dónde (GPS), con qué dispositivo; encadenada por hash. **Inmutable.** |
-| `mantenimiento_tareas` | Corte de césped, desmalezado, etc. No se puede marcar `completada` sin `ejecutada_por`, `completada_en` y `firma_id`. Cerrada = no editable. |
+| `mantenimiento_tareas` | Corte de césped, limpieza de calles, relleno de fosas, pintura, etc. Fotos opcionales como constancia. No se puede marcar `completada` sin `ejecutada_por`, `completada_en` y `firma_id`. Cerrada = no editable. |
 | `operaciones_sepultura` | Inhumación (descarga en nicho/fosa), exhumación, reducción, traslados… **Inmutable**: se corrige con una operación `anulacion`. |
 | `historial_estados_espacio` | Cada cambio de estado de un nicho/fosa, con operación y usuario. **Inmutable.** |
 | `auditoria_eventos` | Bitácora general encadenada por hash de altas/bajas/cambios en tablas sensibles. **Inmutable.** |
@@ -135,8 +135,7 @@ color de la zona = el peor color entre sus tareas
 ```
 
 Valores iniciales de referencia (editables): corte de césped 15 / 30 días
-(en lluvias: 9 / 18), desmalezado 30 / 60, recolección de residuos 3 / 7,
-desagües pluviales 30 / 45. Se puede fijar un plazo distinto por zona.
+(en lluvias: 9 / 18) y recolección de residuos 3 / 7. Se puede fijar un plazo distinto por zona.
 Los sectores de nichos (Pabellón Amarillo, Central, Lateral, Sección Vieja) no evalúan corte de césped.
 
 ### 3.2 Faltante de nichos y fosas
