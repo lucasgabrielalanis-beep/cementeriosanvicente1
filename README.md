@@ -86,7 +86,7 @@ erDiagram
 
 | Tabla | Para qué |
 |---|---|
-| `zonas` | Fosas: Parque (zonas 1–28), Sección Vieja y Sección Nueva. Nichos: Pabellón Amarillo, Central, Lateral y Sección Vieja. Tipo: `parque_fosas`, `nichos`, `mixta`, `especial`. Geometría. |
+| `zonas` | Fosas: Parque (zonas 1–28), zonas COVID (29 y 30), Sección Vieja y Sección Nueva. Nichos: Pabellón Amarillo, Central, Lateral y Sección Vieja. Tipo: `parque_fosas`, `nichos`, `mixta`, `especial`. Geometría. |
 | `puntos_referencia` | Ingresos (Calle Soto y Calle Martin Cartechini), Administración, Cruz Mayor, Rotonda, Baños… para orientarse en campo. |
 | `espacios_sepultura` | Nichos (pabellón/nivel/columna) y fosas (sección/fila/número); tamaño `normal`/`extraordinario`; estado; `version` para concurrencia. |
 | `firmas_digitales` | Una por acción de campo: quién, cuándo (cliente + servidor), qué (hash), dónde (GPS), con qué dispositivo; encadenada por hash. **Inmutable.** |

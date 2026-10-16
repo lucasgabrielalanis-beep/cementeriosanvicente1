@@ -18,7 +18,7 @@
  */
 "use strict";
 
-const CLAVE_DATOS = "cementerio-sv-demo-v4";
+const CLAVE_DATOS = "cementerio-sv-demo-v5";
 const CLAVE_SESION = "cementerio-sv-sesion";
 const ZONA_HORARIA = "America/Argentina/Cordoba";
 const PIN_DEMO = "1234";
@@ -78,10 +78,12 @@ async function datosIniciales() {
   const pinHash = await sha256("pin:" + PIN_DEMO);
 
   const zonas = [];
-  for (let n = 1; n <= 28; n++) {
+  // Parque: zonas 1 a 28. Zonas 29 y 30: zonas COVID. Todas de fosas.
+  for (let n = 1; n <= 30; n++) {
+    const covid = n >= 29;
     zonas.push({
-      id: n, codigo: "Z" + String(n).padStart(2, "0"), numero: n, nombre: "Zona " + n,
-      tipo: "parque_fosas", corte: true, // Parque: zonas 1 a 28, solo fosas
+      id: n, codigo: "Z" + String(n).padStart(2, "0"), numero: n, nombre: covid ? `Zona ${n} (COVID)` : "Zona " + n,
+      tipo: "parque_fosas", corte: true, covid,
     });
   }
   // Sectores: fosas (Sección Vieja y Sección Nueva) y nichos (pabellones y Sección Vieja).
@@ -92,7 +94,7 @@ async function datosIniciales() {
     ["CENTRAL", "Central", "nichos", false],
     ["LATERAL", "Lateral", "nichos", false],
     ["SV_NICHOS", "Sección Vieja (nichos)", "nichos", false],
-  ].forEach(([codigo, nombre, tipo, corte], i) => zonas.push({ id: 29 + i, codigo, numero: null, nombre, tipo, corte }));
+  ].forEach(([codigo, nombre, tipo, corte], i) => zonas.push({ id: 31 + i, codigo, numero: null, nombre, tipo, corte }));
 
   const reglas = {
     corte_cesped: { verde: 15, rojo: 30, lluvia: true },
@@ -113,9 +115,9 @@ async function datosIniciales() {
 
   const usuarios = [
     { id: "u-dir", nombre: "Directivo (demo)", rol: "directivo", legajo: "D-001", pin: pinHash, zonas: [] },
-    { id: "u-cap-a", nombre: "Capataz A (demo)", rol: "capataz", legajo: "C-101", pin: pinHash, zonas: [...range(1, 14), 29, 31, 32] },
-    { id: "u-cap-b", nombre: "Capataz B (demo)", rol: "capataz", legajo: "C-102", pin: pinHash, zonas: [...range(15, 28), 30, 33, 34] },
-    { id: "u-op-1", nombre: "Operario 1 (demo)", rol: "operario", legajo: "O-201", pin: pinHash, zonas: [...range(1, 14), 29, 31, 32] },
+    { id: "u-cap-a", nombre: "Capataz A (demo)", rol: "capataz", legajo: "C-101", pin: pinHash, zonas: [...range(1, 14), 29, 31, 33, 34] },
+    { id: "u-cap-b", nombre: "Capataz B (demo)", rol: "capataz", legajo: "C-102", pin: pinHash, zonas: [...range(15, 28), 30, 32, 35, 36] },
+    { id: "u-op-1", nombre: "Operario 1 (demo)", rol: "operario", legajo: "O-201", pin: pinHash, zonas: [...range(1, 14), 29, 31, 33, 34] },
   ];
   for (const z of zonas) z.responsable = usuarios.find((u) => u.rol === "capataz" && u.zonas.includes(z.id))?.id || null;
 
@@ -130,7 +132,7 @@ async function datosIniciales() {
   for (const [clave, [disp, res, mant, inh, ocup]] of Object.entries(objetivo)) {
     const [tipo, tam] = clave.split("|");
     ocupadosBase[clave] = ocup;
-    // Fosas en el Parque (zonas 1 a 28) y en las secciones de fosas; nichos en los sectores de nichos.
+    // Fosas en el Parque, las zonas COVID y las secciones de fosas; nichos en los sectores de nichos.
     const zonasTipo = zonas.filter((z) => (tipo === "nicho" ? z.tipo === "nichos" : z.tipo === "parque_fosas"));
     const estados = [...Array(disp).fill("disponible"), ...Array(res).fill("reservado"), ...Array(mant).fill("en_mantenimiento"), ...Array(inh).fill("inhabilitado")];
     estados.forEach((estado, i) => {
@@ -143,7 +145,7 @@ async function datosIniciales() {
   }
 
   return {
-    version: 4,
+    version: 5,
     creado: new Date(ahora).toISOString(),
     usuarios, zonas, reglas,
     temporada: { desde: "11-01", hasta: "03-31", factor: 0.6 },
@@ -165,7 +167,7 @@ const Datos = {
   estado: null,
   async cargar() {
     try { this.estado = JSON.parse(localStorage.getItem(CLAVE_DATOS)); } catch { this.estado = null; }
-    if (!this.estado || this.estado.version !== 4) { this.estado = await datosIniciales(); this.guardar(); }
+    if (!this.estado || this.estado.version !== 5) { this.estado = await datosIniciales(); this.guardar(); }
     return this.estado;
   },
   guardar() {
@@ -379,7 +381,8 @@ function cerrarModal() {
 const PESTANAS = {
   directivo: [["resumen", "Resumen"], ["zonas", "Zonas"], ["alertas", "Alertas"], ["registro", "Registro firmado"], ["ajustes", "Ajustes"]],
   // Los tableros (resumen, zonas, alertas, registro) los ven todos; los ajustes, solo directivos.
-  campo: [["mis-zonas", "Mis zonas"], ["tarea", "Registrar tarea"], ["descarga", "Registrar descarga"], ["resumen", "Resumen"], ["zonas", "Zonas"], ["alertas", "Alertas"], ["registro", "Registro firmado"], ["mis-registros", "Mis registros"]],
+  // Capataces y operarios arrancan en el mismo Resumen que los directivos.
+  campo: [["resumen", "Resumen"], ["zonas", "Zonas"], ["alertas", "Alertas"], ["registro", "Registro firmado"], ["mis-zonas", "Mis zonas"], ["tarea", "Registrar tarea"], ["descarga", "Registrar descarga"], ["mis-registros", "Mis registros"]],
 };
 const grupoRol = (u) => (u.rol === "directivo" ? "directivo" : "campo");
 
@@ -480,7 +483,7 @@ function tileZona(z, s) {
   const pie = t ? (t.dias === null ? "Sin registro" : `${TAREAS[t.tarea].split(" ")[0]}: hace ${fmtNum(t.dias)} d`) : "Sin tareas";
   return `<button type="button" class="zona c-${s.color}" data-zona="${z.id}" aria-label="${esc(z.nombre)}: ${COLORES[s.color]}">
     <strong>${z.numero ? z.numero : esc(z.nombre)}</strong>
-    ${z.numero ? "" : `<span>${TIPOS_ZONA[z.tipo]}</span>`}
+    ${z.covid ? "<span>COVID</span>" : z.numero ? "" : `<span>${TIPOS_ZONA[z.tipo]}</span>`}
     <span>${esc(pie)}</span></button>`;
 }
 
@@ -495,7 +498,9 @@ function vistaZonas() {
     <div class="fila" style="margin-bottom:12px">${btn("todas", "Todas")}${btn("rojo_critico", "Rojo crítico")}${btn("amarillo", "Amarillo")}${btn("verde", "Verde")}</div>
     <h2>Fosas</h2>
     <h3>Parque — zonas 1 a 28</h3>
-    ${grilla(visibles.filter(({ z }) => z.numero))}
+    ${grilla(visibles.filter(({ z }) => z.numero && !z.covid))}
+    <h3 style="margin-top:16px">Zonas COVID — 29 y 30</h3>
+    ${grilla(visibles.filter(({ z }) => z.covid))}
     <h3 style="margin-top:16px">Sección Vieja y Sección Nueva</h3>
     ${grilla(visibles.filter(({ z }) => !z.numero && z.tipo === "parque_fosas"))}
     <h2>Nichos</h2>
