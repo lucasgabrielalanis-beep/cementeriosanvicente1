@@ -178,6 +178,8 @@ CREATE TABLE espacios_sepultura (
   -- Nichos: pabellón/bloque + nivel (fila vertical) + columna.
   -- En la Sección Vieja: bloque del plano (bloques_seccion) + número de nicho.
   bloque_id        INTEGER REFERENCES bloques_seccion(id),
+  -- Pabellón Amarillo: planta 1 (primera), 2 (segunda) o 3 (tercera).
+  planta           SMALLINT CHECK (planta BETWEEN 1 AND 3),
   pabellon         TEXT,
   nivel            SMALLINT CHECK (nivel BETWEEN 1 AND 12),
   columna          SMALLINT CHECK (columna > 0),
@@ -191,7 +193,7 @@ CREATE TABLE espacios_sepultura (
                      CASE WHEN tipo_espacio = 'nicho' AND bloque_id IS NOT NULL
                           THEN 'N-' || zona_id || '-B' || bloque_id || '-' || numero
                           WHEN tipo_espacio = 'nicho'
-                          THEN 'N-' || zona_id || '-' || coalesce(pabellon,'') || '-' || nivel || '-' || columna
+                          THEN 'N-' || zona_id || coalesce('-P' || planta, '') || '-' || coalesce(pabellon,'') || '-' || nivel || '-' || columna
                           WHEN cuadro IS NOT NULL
                           THEN 'F-' || zona_id || '-C' || cuadro || '-' || numero
                           ELSE 'F-' || zona_id || '-' || coalesce(seccion,'') || '-' || fila || '-' || numero END
@@ -206,6 +208,7 @@ CREATE TABLE espacios_sepultura (
     tipo_espacio <> 'nicho' OR (nivel IS NOT NULL AND columna IS NOT NULL)
                             OR (bloque_id IS NOT NULL AND numero IS NOT NULL)),
   CONSTRAINT bloque_solo_nichos CHECK (bloque_id IS NULL OR tipo_espacio = 'nicho'),
+  CONSTRAINT planta_solo_nichos CHECK (planta IS NULL OR tipo_espacio = 'nicho'),
   CONSTRAINT fosa_ubicacion CHECK (
     tipo_espacio <> 'fosa' OR (numero IS NOT NULL AND (cuadro IS NOT NULL OR fila IS NOT NULL))),
   CONSTRAINT cuadro_solo_fosas CHECK (cuadro IS NULL OR tipo_espacio = 'fosa'),
@@ -214,7 +217,7 @@ CREATE TABLE espacios_sepultura (
   CONSTRAINT inhabilitado_con_motivo CHECK (
     estado <> 'inhabilitado' OR motivo_inhabilitacion IS NOT NULL),
   CONSTRAINT espacio_unico UNIQUE NULLS NOT DISTINCT
-    (zona_id, tipo_espacio, bloque_id, pabellon, nivel, columna, cuadro, seccion, fila, numero)
+    (zona_id, tipo_espacio, bloque_id, planta, pabellon, nivel, columna, cuadro, seccion, fila, numero)
 );
 -- Índice principal del filtro de disponibilidad y del resumen de stock
 CREATE INDEX idx_espacios_filtro ON espacios_sepultura (tipo_espacio, tipo_tamano, zona_id, estado);

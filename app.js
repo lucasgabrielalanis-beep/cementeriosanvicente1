@@ -144,7 +144,7 @@ async function datosIniciales() {
   numerarEspacios(espacios, zonas);
 
   return {
-    version: 10,
+    version: 11,
     creado: new Date(ahora).toISOString(),
     usuarios, zonas, reglas,
     temporada: { desde: "11-01", hasta: "03-31", factor: 0.6 },
@@ -162,20 +162,24 @@ async function datosIniciales() {
 // Ubicación de cada nicho o fosa (datos de ejemplo; con la base real viene del padrón).
 // Zonas 1 a 30: zona → cuadro (1 a 40) → fosa. Resto: número dentro del sector.
 const MAX_CUADROS = 40;
+const PLANTAS = ["Primera planta", "Segunda planta", "Tercera planta"];
 // Sección Vieja (sector de nichos, código SV_NICHOS): cuadro y bloque según el plano (plano-seccion-vieja.js).
 function numerarEspacios(espacios, zonas) {
   const numerada = new Set(zonas.filter((z) => z.numero).map((z) => z.id));
   const seccionVieja = zonas.find((z) => z.codigo === "SV_NICHOS")?.id;
+  const pabellonAmarillo = zonas.find((z) => z.codigo === "PAB_AMARILLO")?.id;
   const grupos = {};
   for (const e of espacios) {
     e.cuadro = e.tipo === "fosa" && numerada.has(e.zona) ? 1 + ((e.id * 7) % MAX_CUADROS) : undefined;
     e.lugar = e.tipo === "nicho" && e.zona === seccionVieja ? etiquetaBloque(BLOQUES_CON_NICHOS[(e.id * 5) % BLOQUES_CON_NICHOS.length]) : undefined;
-    (grupos[[e.zona, e.tipo, e.cuadro ?? "", e.lugar ?? ""].join("|")] ||= []).push(e);
+    // Pabellón Amarillo: primera, segunda y tercera planta.
+    e.planta = e.tipo === "nicho" && e.zona === pabellonAmarillo ? 1 + (e.id % PLANTAS.length) : undefined;
+    (grupos[[e.zona, e.tipo, e.cuadro ?? "", e.lugar ?? "", e.planta ?? ""].join("|")] ||= []).push(e);
   }
   for (const lista of Object.values(grupos)) {
     lista.sort((a, b) => a.id - b.id).forEach((e, i) => {
       e.numero = e.cuadro || e.lugar ? 1 + i * 3 + (e.id % 3) : 1 + i * 4 + (e.id % 4);
-      if (e.tipo === "nicho" && !e.lugar) e.lugar = `Fila ${1 + ((e.numero - 1) % 5)}`;
+      if (e.tipo === "nicho" && !e.lugar) e.lugar = (e.planta ? PLANTAS[e.planta - 1] + " · " : "") + `Fila ${1 + ((e.numero - 1) % 5)}`;
       // En la Sección Vieja la ubicación no lleva la palabra "Nicho" (pedido del dueño).
       e.ub = e.tipo === "nicho" ? (e.zona === seccionVieja ? `${e.lugar} · N° ${e.numero}` : `${e.lugar} · Nicho N° ${e.numero}`)
         : e.cuadro ? `Cuadro ${e.cuadro} · Fosa ${e.numero}` : `Fosa N° ${e.numero}`;
@@ -197,10 +201,10 @@ const Datos = {
       }
       this.estado.version = 6; this.guardar();
     }
-    if ([6, 7, 8, 9].includes(this.estado?.version)) { // ubicación: zona/cuadro/fosa y bloques de la Sección Vieja
+    if ([6, 7, 8, 9, 10].includes(this.estado?.version)) { // ubicación: zona/cuadro/fosa y bloques de la Sección Vieja
       for (const z of this.estado.zonas) if (z.codigo === "SV_NICHOS") z.nombre = "Sección Vieja";
       numerarEspacios(this.estado.espacios, this.estado.zonas);
-      this.estado.version = 10; this.guardar();
+      this.estado.version = 11; this.guardar();
     }
     const capB = this.estado?.usuarios?.find((u) => u.id === "u-cap-b");
     if (capB) { // queda un solo capataz para ingresar: hereda las zonas del Capataz B
@@ -218,7 +222,7 @@ const Datos = {
       for (const u of this.estado.usuarios) if (u.nombre === "Directivo (demo)") u.nombre = "Director (demo)";
       this.guardar();
     }
-    if (!this.estado || this.estado.version !== 10) { this.estado = await datosIniciales(); this.guardar(); }
+    if (!this.estado || this.estado.version !== 11) { this.estado = await datosIniciales(); this.guardar(); }
     return this.estado;
   },
   guardar(silencioso = false) {
@@ -639,6 +643,7 @@ function detalleZona(id) {
       <tbody>${s.tareas.map((t) => `<tr><td>${nombreTarea(t.tarea)}</td><td>${fmtDia(t.ultima)}</td><td>${t.dias === null ? "—" : fmtNum(t.dias) + " d"}</td><td>${fmtNum(t.limV)} / ${fmtNum(t.limR)} d</td><td>${chipColor(t.color)}</td></tr>`).join("") || '<tr><td colspan="5">Sin tareas con plazo.</td></tr>'}</tbody>
     </table></div>
     ${z.codigo === "SV_NICHOS" ? planoSeccionVieja(z.id) : ""}
+    ${z.codigo === "PAB_AMARILLO" ? plantasPabellon(z.id) : ""}
     <h3 style="margin-top:16px">Últimos registros en la zona</h3>
     ${regs.length ? tablaRegistros(regs) : '<p class="muted">Sin registros firmados todavía.</p>'}
     <div class="fila" style="margin-top:16px">
@@ -668,6 +673,19 @@ function planoSeccionVieja(zonaId) {
       <div class="tabla-scroll"><table>
         <thead><tr><th>Cuadro</th><th>Nombre</th><th>Bloq.</th><th>Prop.</th><th>Detalle</th><th>Libres</th></tr></thead>
         <tbody>${s.bloques.map(fila).join("")}</tbody></table></div>`).join("")}`;
+}
+
+// Pabellón Amarillo: estado de los nichos por planta.
+function plantasPabellon(zonaId) {
+  const esp = Datos.estado.espacios.filter((e) => e.zona === zonaId);
+  const cuenta = (p, estado) => esp.filter((e) => e.planta === p && e.estado === estado).length;
+  const extra = (p) => esp.filter((e) => e.planta === p && e.estado === "disponible" && e.tam === "extraordinario").length;
+  return `<h3 style="margin-top:16px">Plantas del Pabellón Amarillo</h3>
+    <div class="tabla-scroll"><table>
+      <thead><tr><th>Planta</th><th>Libres</th><th>Extraordinarios libres</th><th>Reservados</th><th>En mantenimiento</th></tr></thead>
+      <tbody>${PLANTAS.map((nombre, i) => `<tr><td><strong>${nombre}</strong></td><td><strong>${cuenta(i + 1, "disponible")}</strong></td>
+        <td>${extra(i + 1)}</td><td>${cuenta(i + 1, "reservado")}</td><td>${cuenta(i + 1, "en_mantenimiento")}</td></tr>`).join("")}</tbody>
+    </table></div>`;
 }
 
 function vistaAlertas() {
