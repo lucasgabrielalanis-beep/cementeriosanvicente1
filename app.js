@@ -836,7 +836,7 @@ function vistaTarea() {
 
 function vistaDescarga() {
   const b = UI.borrador?.accion === "descarga" ? UI.borrador : { tipo: "nicho", tam: "normal", zona: "" };
-  UI.filtroDescarga = { tipo: b.tipo, tam: b.tam, zona: b.zona };
+  UI.filtroDescarga = { tipo: b.tipo, tam: b.tam, zona: b.zona, planta: "", lugar: "", cuadro: "" };
   const op = (campo, valor, txt) => `<button type="button" class="opcion" data-elegir="${campo}" data-valor="${valor}" aria-pressed="${b[campo] === valor}">${txt}</button>`;
   return `<h1>Registrar descarga</h1>
     <p class="muted">Inhumación en nicho o fosa. Elegí el espacio, cargá los datos y firmá.</p>
@@ -849,6 +849,7 @@ function vistaDescarga() {
       </div>
       <input type="hidden" name="tipo" value="${b.tipo}"><input type="hidden" name="tam" value="${b.tam}">
       <label>Zona<select name="zona" data-filtro-zona><option value="">Todas las zonas</option></select></label>
+      <div id="sub-ubicacion" hidden></div>
       <label>Espacio disponible<select name="espacio" required></select></label>
       <h2 style="margin:4px 0 0">Datos de la persona fallecida</h2>
       <label>Apellido y nombre<input name="dif_nombre" required maxlength="120" autocomplete="off"></label>
@@ -873,10 +874,36 @@ function actualizarListaEspacios() {
   selZona.innerHTML = `<option value="">Todas las zonas (${disponibles.length})</option>` +
     Object.keys(porZona).map(Number).sort((a, b) => a - b).map((id) => `<option value="${id}" ${String(id) === String(f.zona) ? "selected" : ""}>${esc(nombreZona(id))} (${porZona[id]})</option>`).join("");
   if (f.zona && !porZona[f.zona]) f.zona = "";
-  const lista = disponibles.filter((e) => !f.zona || e.zona === Number(f.zona))
+  const enZona = disponibles.filter((e) => !f.zona || e.zona === Number(f.zona));
+
+  // Datos de ubicación según la zona elegida: planta (Pabellón Amarillo),
+  // cuadro/bloque (Sección Vieja) o cuadro (fosas de las zonas 1 a 30).
+  const zonaSel = f.zona ? Datos.estado.zonas.find((z) => z.id === Number(f.zona)) : null;
+  const sub = $("#sub-ubicacion");
+  let html = "";
+  const cuantos = (pred) => enZona.filter(pred).length;
+  if (zonaSel?.codigo === "PAB_AMARILLO" && f.tipo === "nicho") {
+    const btn = (valor, txt) => `<button type="button" class="opcion" data-planta="${valor}" aria-pressed="${String(f.planta) === String(valor)}">${txt}</button>`;
+    html = `<fieldset style="border:0;padding:0;margin:0"><legend style="font-weight:600;margin-bottom:6px">Planta</legend>
+      <div class="opciones">${btn("", `Todas (${enZona.length})`)}${PLANTAS.map((p, i) => btn(i + 1, `${p} (${cuantos((e) => e.planta === i + 1)})`)).join("")}</div></fieldset>`;
+  } else if (zonaSel?.codigo === "SV_NICHOS" && f.tipo === "nicho") {
+    const lugares = [...new Set(enZona.map((e) => e.lugar))].sort((a, b) => a.localeCompare(b, "es", { numeric: true }));
+    html = `<label>Cuadro / Bloque<select data-filtro-lugar><option value="">Todos (${enZona.length})</option>
+      ${lugares.map((l) => `<option value="${esc(l)}" ${l === f.lugar ? "selected" : ""}>${esc(l)} (${cuantos((e) => e.lugar === l)})</option>`).join("")}</select></label>`;
+  } else if (zonaSel?.numero && f.tipo === "fosa") {
+    const cuadros = [...new Set(enZona.map((e) => e.cuadro))].sort((a, b) => a - b);
+    html = `<label>Cuadro<select data-filtro-cuadro><option value="">Todos (${enZona.length})</option>
+      ${cuadros.map((c) => `<option value="${c}" ${String(c) === String(f.cuadro) ? "selected" : ""}>Cuadro ${c} (${cuantos((e) => e.cuadro === c)})</option>`).join("")}</select></label>`;
+  }
+  if (sub) { sub.innerHTML = html; sub.hidden = !html; }
+
+  const lista = enZona
+    .filter((e) => !f.planta || e.planta === Number(f.planta))
+    .filter((e) => !f.lugar || e.lugar === f.lugar)
+    .filter((e) => !f.cuadro || e.cuadro === Number(f.cuadro))
     .sort((a, b) => a.zona - b.zona || (a.cuadro ?? 0) - (b.cuadro ?? 0) || (a.lugar ?? "").localeCompare(b.lugar ?? "", "es", { numeric: true }) || a.numero - b.numero).slice(0, 200);
   form.elements.espacio.innerHTML = lista.length
-    ? lista.map((e) => `<option value="${e.id}">${esc(nombreZona(e.zona))} · ${esc(e.ub)}</option>`).join("")
+    ? lista.map((e) => `<option value="${e.id}">${f.zona ? "" : esc(nombreZona(e.zona)) + " · "}${esc(e.ub)}</option>`).join("")
     : `<option value="">No hay ${nombreStock(f.tipo, f.tam).toLowerCase()} disponibles</option>`;
 }
 
@@ -978,6 +1005,7 @@ document.addEventListener("click", async (ev) => {
   if (d.zona) { detalleZona(Number(d.zona)); return; }
   if (d.registro) { detalleRegistro(Number(d.registro)); return; }
   if (d.filtro) { UI.filtroColor = d.filtro; render(); return; }
+  if ("planta" in d) { UI.filtroDescarga.planta = d.planta; actualizarListaEspacios(); return; }
   if (d.filtroDisp) { UI.filtroDisp.tipo = d.filtroDisp; render(); return; }
   if (d.verDisp) {
     const [tipo, tam] = d.verDisp.split("|");
@@ -999,7 +1027,7 @@ document.addEventListener("click", async (ev) => {
     const form = el.closest("form");
     form.querySelectorAll(`[data-elegir="${d.elegir}"]`).forEach((b) => b.setAttribute("aria-pressed", String(b === el)));
     form.elements[d.elegir].value = d.valor;
-    if (form.dataset.form === "descarga") { UI.filtroDescarga[d.elegir] = d.valor; actualizarListaEspacios(); }
+    if (form.dataset.form === "descarga") { Object.assign(UI.filtroDescarga, { [d.elegir]: d.valor, planta: "", lugar: "", cuadro: "" }); actualizarListaEspacios(); }
     return;
   }
   switch (d.accion) {
@@ -1036,7 +1064,9 @@ document.addEventListener("change", async (ev) => {
   }
   if (ev.target.matches("[data-listado-zona]")) { UI.listado.zona = ev.target.value; abrirListado(); return; }
   if (ev.target.matches("[data-filtro-extra]")) { UI.filtroDisp.extra = ev.target.checked; render(); return; }
-  if (ev.target.matches("[data-filtro-zona]")) { UI.filtroDescarga.zona = ev.target.value; actualizarListaEspacios(); }
+  if (ev.target.matches("[data-filtro-zona]")) { Object.assign(UI.filtroDescarga, { zona: ev.target.value, planta: "", lugar: "", cuadro: "" }); actualizarListaEspacios(); }
+  if (ev.target.matches("[data-filtro-lugar]")) { UI.filtroDescarga.lugar = ev.target.value; actualizarListaEspacios(); }
+  if (ev.target.matches("[data-filtro-cuadro]")) { UI.filtroDescarga.cuadro = ev.target.value; actualizarListaEspacios(); }
 });
 
 document.addEventListener("submit", async (ev) => {
@@ -1064,11 +1094,12 @@ document.addEventListener("submit", async (ev) => {
       if (!esp) { avisar("Elegí un espacio disponible."); return; }
       const datos = {
         espacio_id: esp.id, ubicacion: esp.ub, zona: esp.zona, tipo: esp.tipo, tam: esp.tam,
+        planta: esp.planta, cuadro: esp.cuadro, lugar: esp.tipo === "nicho" ? esp.lugar : undefined, numero: esp.numero,
         difunto: { nombre: f.dif_nombre.value.trim(), dni: f.dif_dni.value.trim() || undefined, fecha: f.dif_fecha.value },
         expediente: f.expediente.value.trim() || undefined, observaciones: f.observaciones.value.trim() || undefined,
       };
       UI.borrador = { accion: "descarga", tipo: esp.tipo, tam: esp.tam, zona: UI.filtroDescarga.zona };
-      abrirFirma("descarga", datos, `<dt>Espacio</dt><dd>${esc(esp.ub)}${esp.tam === "extraordinario" ? " · <strong>" + nombreTamano(esp) + "</strong>" : ""} · ${esc(nombreZona(esp.zona))}</dd><dt>Difunto</dt><dd>${esc(datos.difunto.nombre)}${datos.difunto.dni ? " · DNI " + esc(datos.difunto.dni) : ""}</dd>`);
+      abrirFirma("descarga", datos, `<dt>Zona</dt><dd>${esc(nombreZona(esp.zona))}</dd>${esp.planta ? `<dt>Planta</dt><dd>${PLANTAS[esp.planta - 1]}</dd>` : ""}<dt>Espacio</dt><dd>${esc(esp.ub)}${esp.tam === "extraordinario" ? " · <strong>" + nombreTamano(esp) + "</strong>" : ""}</dd><dt>Difunto</dt><dd>${esc(datos.difunto.nombre)}${datos.difunto.dni ? " · DNI " + esc(datos.difunto.dni) : ""}</dd>`);
     } else if (tipoForm === "firma") {
       const c = $("#lienzo");
       if (!c.trazos) { avisar("Falta tu firma en el recuadro."); return; }
