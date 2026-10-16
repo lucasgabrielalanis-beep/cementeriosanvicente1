@@ -298,6 +298,46 @@ paths:
         '409': { $ref: '#/components/responses/Conflicto' }
         '422': { $ref: '#/components/responses/FirmaInvalida' }
 
+  /operaciones/exhumacion:
+    post:
+      tags: [Operaciones]
+      summary: Registra una exhumación en nicho o fosa con firma digital (el lugar queda disponible)
+      description: |
+        Roles capataz u operario. El espacio tiene que figurar `ocupado`; al registrar pasa a
+        `disponible`, se guarda el historial y se reevalúa el stock (vuelve a contar como libre).
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [espacio_id, difunto, destino, realizada_en, ubicacion, firma]
+              properties:
+                espacio_id: { type: integer }
+                difunto:
+                  type: object
+                  required: [apellido_nombre]
+                  properties:
+                    apellido_nombre: { type: string }
+                    dni: { type: string }
+                    fecha_defuncion: { type: string, format: date }
+                destino: { type: string, enum: [Osario, Cremación, Reducción, Traslado a otro lugar del cementerio, Traslado a otro cementerio, Otro] }
+                expediente: { type: string }
+                realizada_en: { type: string, format: date-time }
+                ubicacion: { $ref: '#/components/schemas/Coordenadas' }
+                observaciones: { type: string, nullable: true }
+                firma: { $ref: '#/components/schemas/FirmaRequest' }
+      responses:
+        '201':
+          description: Exhumación registrada; el espacio queda disponible
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DescargaRespuesta' }
+        '409': { $ref: '#/components/responses/Conflicto' }
+        '422': { $ref: '#/components/responses/FirmaInvalida' }
+
   /alertas:
     get:
       tags: [Alertas]
