@@ -175,7 +175,7 @@ CREATE TABLE espacios_sepultura (
   tipo_espacio     tipo_espacio NOT NULL,
   tipo_tamano      tipo_tamano  NOT NULL DEFAULT 'normal',
   estado           estado_espacio NOT NULL DEFAULT 'disponible',
-  -- Nichos: pabellón/bloque + nivel (fila vertical) + columna.
+  -- Nichos: pabellón/bloque + nivel (= "Fila" en la app) + columna/número.
   -- En la Sección Vieja: bloque del plano (bloques_seccion) + número de nicho.
   bloque_id        INTEGER REFERENCES bloques_seccion(id),
   -- Pabellón Amarillo: planta 1 (primera), 2 (segunda) o 3 (tercera).

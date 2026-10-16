@@ -144,7 +144,7 @@ async function datosIniciales() {
   numerarEspacios(espacios, zonas);
 
   return {
-    version: 11,
+    version: 12,
     creado: new Date(ahora).toISOString(),
     usuarios, zonas, reglas,
     temporada: { desde: "11-01", hasta: "03-31", factor: 0.6 },
@@ -163,6 +163,9 @@ async function datosIniciales() {
 // Zonas 1 a 30: zona → cuadro (1 a 40) → fosa. Resto: número dentro del sector.
 const MAX_CUADROS = 40;
 const PLANTAS = ["Primera planta", "Segunda planta", "Tercera planta"];
+const MAX_FILAS = 10;
+// "Segunda planta · Fila 2 · Nicho N° 5". En la Sección Vieja sin la palabra "Nicho" (pedido del dueño).
+const ubNicho = (e, esSeccionVieja) => [e.lugar, `Fila ${e.fila}`, (esSeccionVieja ? "N° " : "Nicho N° ") + e.numero].filter(Boolean).join(" · ");
 // Sección Vieja (sector de nichos, código SV_NICHOS): cuadro y bloque según el plano (plano-seccion-vieja.js).
 function numerarEspacios(espacios, zonas) {
   const numerada = new Set(zonas.filter((z) => z.numero).map((z) => z.id));
@@ -174,14 +177,14 @@ function numerarEspacios(espacios, zonas) {
     e.lugar = e.tipo === "nicho" && e.zona === seccionVieja ? etiquetaBloque(BLOQUES_CON_NICHOS[(e.id * 5) % BLOQUES_CON_NICHOS.length]) : undefined;
     // Pabellón Amarillo: primera, segunda y tercera planta.
     e.planta = e.tipo === "nicho" && e.zona === pabellonAmarillo ? 1 + (e.id % PLANTAS.length) : undefined;
+    if (e.planta) e.lugar = PLANTAS[e.planta - 1];
     (grupos[[e.zona, e.tipo, e.cuadro ?? "", e.lugar ?? "", e.planta ?? ""].join("|")] ||= []).push(e);
   }
   for (const lista of Object.values(grupos)) {
     lista.sort((a, b) => a.id - b.id).forEach((e, i) => {
-      e.numero = e.cuadro || e.lugar ? 1 + i * 3 + (e.id % 3) : 1 + i * 4 + (e.id % 4);
-      if (e.tipo === "nicho" && !e.lugar) e.lugar = (e.planta ? PLANTAS[e.planta - 1] + " · " : "") + `Fila ${1 + ((e.numero - 1) % 5)}`;
-      // En la Sección Vieja la ubicación no lleva la palabra "Nicho" (pedido del dueño).
-      e.ub = e.tipo === "nicho" ? (e.zona === seccionVieja ? `${e.lugar} · N° ${e.numero}` : `${e.lugar} · Nicho N° ${e.numero}`)
+      e.numero = e.cuadro || (e.lugar && !e.planta) ? 1 + i * 3 + (e.id % 3) : 1 + i * 4 + (e.id % 4);
+      if (e.tipo === "nicho") e.fila = 1 + ((e.numero - 1) % 5);
+      e.ub = e.tipo === "nicho" ? ubNicho(e, e.zona === seccionVieja)
         : e.cuadro ? `Cuadro ${e.cuadro} · Fosa ${e.numero}` : `Fosa N° ${e.numero}`;
     });
   }
@@ -201,10 +204,10 @@ const Datos = {
       }
       this.estado.version = 6; this.guardar();
     }
-    if ([6, 7, 8, 9, 10].includes(this.estado?.version)) { // ubicación: zona/cuadro/fosa y bloques de la Sección Vieja
+    if ([6, 7, 8, 9, 10, 11].includes(this.estado?.version)) { // ubicación: zona/cuadro/fosa y bloques de la Sección Vieja
       for (const z of this.estado.zonas) if (z.codigo === "SV_NICHOS") z.nombre = "Sección Vieja";
       numerarEspacios(this.estado.espacios, this.estado.zonas);
-      this.estado.version = 11; this.guardar();
+      this.estado.version = 12; this.guardar();
     }
     const capB = this.estado?.usuarios?.find((u) => u.id === "u-cap-b");
     if (capB) { // queda un solo capataz para ingresar: hereda las zonas del Capataz B
@@ -222,7 +225,7 @@ const Datos = {
       for (const u of this.estado.usuarios) if (u.nombre === "Directivo (demo)") u.nombre = "Director (demo)";
       this.guardar();
     }
-    if (!this.estado || this.estado.version !== 11) { this.estado = await datosIniciales(); this.guardar(); }
+    if (!this.estado || this.estado.version !== 12) { this.estado = await datosIniciales(); this.guardar(); }
     return this.estado;
   },
   guardar(silencioso = false) {
@@ -391,8 +394,16 @@ async function firmarYRegistrar(usuario, accion, datos, pin, trazoDataUrl, gps, 
     if (z && Datos.estado.reglas[datos.tipo_tarea]) z.ultimas[datos.tipo_tarea] = registrado_en;
   } else if (accion === "descarga") {
     const e = Datos.estado.espacios.find((x) => x.id === datos.espacio_id);
-    if (!e || !["disponible", "reservado"].includes(e.estado)) throw new Error("Ese espacio ya no está disponible. Elegí otro.");
-    e.estado = "ocupado";
+    if (!e && datos.alta_manual) {
+      // Nicho cargado a mano que no figuraba en la lista: se agrega ya ocupado.
+      Datos.estado.espacios.push({
+        id: datos.espacio_id, zona: datos.zona, tipo: "nicho", tam: datos.tam, estado: "ocupado",
+        planta: datos.planta, lugar: datos.lugar, fila: datos.fila, numero: datos.numero, ub: datos.ubicacion, alta_manual: true,
+      });
+    } else {
+      if (!e || !["disponible", "reservado"].includes(e.estado)) throw new Error("Ese espacio ya no está disponible. Elegí otro.");
+      e.estado = "ocupado";
+    }
   }
   registros.push(registro);
   if (!Datos.guardar(true)) {
@@ -558,11 +569,11 @@ function abrirListado() {
   const todos = Datos.estado.espacios.filter((e) => e.estado === "disponible" && e.tipo === tipo && e.tam === tam);
   const zonasCon = [...new Set(todos.map((e) => e.zona))].sort((a, b) => a - b);
   const lista = todos.filter((e) => !zona || e.zona === Number(zona))
-    .sort((a, b) => a.zona - b.zona || (a.cuadro ?? 0) - (b.cuadro ?? 0) || (a.lugar ?? "").localeCompare(b.lugar ?? "", "es", { numeric: true }) || a.numero - b.numero);
+    .sort((a, b) => a.zona - b.zona || (a.cuadro ?? 0) - (b.cuadro ?? 0) || (a.lugar ?? "").localeCompare(b.lugar ?? "", "es", { numeric: true }) || (a.fila ?? 0) - (b.fila ?? 0) || a.numero - b.numero);
   const esFosa = tipo === "fosa";
   const filas = lista.map((e) => `<tr>
       <td>${esc(nombreZona(e.zona))}</td>
-      ${esFosa ? `<td>${e.cuadro ?? "—"}</td><td><strong>${e.numero}</strong></td>` : `<td>${esc(e.lugar)}</td><td><strong>${e.numero}</strong></td>`}
+      ${esFosa ? `<td>${e.cuadro ?? "—"}</td><td><strong>${e.numero}</strong></td>` : `<td>${esc(e.lugar || "—")}</td><td>${e.fila ?? "—"}</td><td><strong>${e.numero}</strong></td>`}
       <td>${e.tam === "extraordinario" ? `<span class="chip critica">${nombreTamano(e)}</span>` : "Normal"}</td></tr>`).join("");
   abrirModal(`<h2 style="margin-top:0">${nombreStock(tipo, tam)} disponibles</h2>
     <p><strong>${lista.length}</strong> ${lista.length === 1 ? "lugar libre" : "lugares libres"}${zona ? " en " + esc(nombreZona(Number(zona))) : ` en ${zonasCon.length} ${zonasCon.length === 1 ? "zona" : "zonas"}`}.</p>
@@ -571,7 +582,7 @@ function abrirListado() {
       ${zonasCon.map((id) => `<option value="${id}" ${String(id) === String(zona) ? "selected" : ""}>${esc(nombreZona(id))} (${todos.filter((e) => e.zona === id).length})</option>`).join("")}
     </select></label>
     ${lista.length ? `<div class="tabla-scroll"><table>
-      <thead><tr><th>Zona</th>${esFosa ? "<th>Cuadro</th><th>Fosa</th>" : "<th>Ubicación</th><th>N°</th>"}<th>Tamaño</th></tr></thead>
+      <thead><tr><th>Zona</th>${esFosa ? "<th>Cuadro</th><th>Fosa</th>" : "<th>Planta / Cuadro</th><th>Fila</th><th>N°</th>"}<th>Tamaño</th></tr></thead>
       <tbody>${filas}</tbody></table></div>` : '<div class="card vacio">No hay disponibles.</div>'}
     <p style="margin-top:16px"><button class="btn sec" type="button" data-accion="cerrar">Cerrar</button></p>`);
 }
@@ -836,7 +847,7 @@ function vistaTarea() {
 
 function vistaDescarga() {
   const b = UI.borrador?.accion === "descarga" ? UI.borrador : { tipo: "nicho", tam: "normal", zona: "" };
-  UI.filtroDescarga = { tipo: b.tipo, tam: b.tam, zona: b.zona, planta: "", lugar: "", cuadro: "" };
+  UI.filtroDescarga = { tipo: b.tipo, tam: b.tam, zona: b.zona, planta: "", lugar: "", cuadro: "", fila: "" };
   const op = (campo, valor, txt) => `<button type="button" class="opcion" data-elegir="${campo}" data-valor="${valor}" aria-pressed="${b[campo] === valor}">${txt}</button>`;
   return `<h1>Registrar descarga</h1>
     <p class="muted">Inhumación en nicho o fosa. Elegí el espacio, cargá los datos y firmá.</p>
@@ -850,7 +861,14 @@ function vistaDescarga() {
       <input type="hidden" name="tipo" value="${b.tipo}"><input type="hidden" name="tam" value="${b.tam}">
       <label>Zona<select name="zona" data-filtro-zona><option value="">Todas las zonas</option></select></label>
       <div id="sub-ubicacion" hidden></div>
-      <label>Espacio disponible<select name="espacio" required></select></label>
+      <label id="elegir-espacio">Espacio disponible<select name="espacio"></select></label>
+      <div id="nicho-manual" class="form" hidden>
+        <label>Fila<select name="fila" data-filtro-fila></select></label>
+        <label>Número de nicho <span class="muted">(escribilo a mano)</span>
+          <input name="nicho_num" type="number" min="1" max="99999" inputmode="numeric" autocomplete="off" placeholder="Ej.: 125"></label>
+        <div><span class="muted chico">Libres en esta ubicación (tocá uno para completarlo):</span>
+          <ul class="espacios-libres" id="nichos-sugeridos"></ul></div>
+      </div>
       <h2 style="margin:4px 0 0">Datos de la persona fallecida</h2>
       <label>Apellido y nombre<input name="dif_nombre" required maxlength="120" autocomplete="off"></label>
       <div class="dos-col">
@@ -905,6 +923,20 @@ function actualizarListaEspacios() {
   form.elements.espacio.innerHTML = lista.length
     ? lista.map((e) => `<option value="${e.id}">${f.zona ? "" : esc(nombreZona(e.zona)) + " · "}${esc(e.ub)}</option>`).join("")
     : `<option value="">No hay ${nombreStock(f.tipo, f.tam).toLowerCase()} disponibles</option>`;
+
+  // Nichos: fila a elegir y número de nicho escrito a mano (con los libres como ayuda).
+  const esNicho = f.tipo === "nicho";
+  $("#elegir-espacio").hidden = esNicho;
+  $("#nicho-manual").hidden = !esNicho;
+  if (esNicho) {
+    const porFila = (n) => lista.filter((e) => e.fila === n).length;
+    form.elements.fila.innerHTML = `<option value="">Elegí la fila</option>` +
+      Array.from({ length: MAX_FILAS }, (_, i) => i + 1).map((n) => `<option value="${n}" ${String(n) === String(f.fila) ? "selected" : ""}>Fila ${n}${porFila(n) ? ` (${porFila(n)} libres)` : ""}</option>`).join("");
+    const sugeridos = lista.filter((e) => !f.fila || e.fila === Number(f.fila)).slice(0, 40);
+    $("#nichos-sugeridos").innerHTML = f.zona
+      ? sugeridos.map((e) => `<li><button type="button" class="enlace" data-sugerido="${e.id}">${f.fila ? "" : `Fila ${e.fila} · `}N° ${e.numero}${e.tam === "extraordinario" ? " · " + nombreTamano(e) : ""}${f.planta || !e.planta ? "" : ` · ${PLANTAS[e.planta - 1]}`}${f.lugar || !e.lugar || e.planta ? "" : ` · ${esc(e.lugar)}`}</button></li>`).join("") || '<li class="muted">No hay libres registrados acá. Igual podés cargar el número a mano.</li>'
+      : '<li class="muted">Elegí primero la zona.</li>';
+  }
 }
 
 function vistaMisRegistros() {
@@ -1005,7 +1037,19 @@ document.addEventListener("click", async (ev) => {
   if (d.zona) { detalleZona(Number(d.zona)); return; }
   if (d.registro) { detalleRegistro(Number(d.registro)); return; }
   if (d.filtro) { UI.filtroColor = d.filtro; render(); return; }
-  if ("planta" in d) { UI.filtroDescarga.planta = d.planta; actualizarListaEspacios(); return; }
+  if ("planta" in d) { Object.assign(UI.filtroDescarga, { planta: d.planta, fila: "" }); actualizarListaEspacios(); return; }
+  if (d.sugerido) {
+    const e = Datos.estado.espacios.find((x) => x.id === Number(d.sugerido));
+    const form = el.closest("form");
+    if (e && form) {
+      if (e.planta) UI.filtroDescarga.planta = String(e.planta);
+      if (e.lugar && !e.planta) UI.filtroDescarga.lugar = e.lugar;
+      UI.filtroDescarga.fila = String(e.fila);
+      actualizarListaEspacios();
+      form.elements.nicho_num.value = e.numero;
+    }
+    return;
+  }
   if (d.filtroDisp) { UI.filtroDisp.tipo = d.filtroDisp; render(); return; }
   if (d.verDisp) {
     const [tipo, tam] = d.verDisp.split("|");
@@ -1027,7 +1071,7 @@ document.addEventListener("click", async (ev) => {
     const form = el.closest("form");
     form.querySelectorAll(`[data-elegir="${d.elegir}"]`).forEach((b) => b.setAttribute("aria-pressed", String(b === el)));
     form.elements[d.elegir].value = d.valor;
-    if (form.dataset.form === "descarga") { Object.assign(UI.filtroDescarga, { [d.elegir]: d.valor, planta: "", lugar: "", cuadro: "" }); actualizarListaEspacios(); }
+    if (form.dataset.form === "descarga") { Object.assign(UI.filtroDescarga, { [d.elegir]: d.valor, planta: "", lugar: "", cuadro: "", fila: "" }); actualizarListaEspacios(); }
     return;
   }
   switch (d.accion) {
@@ -1064,8 +1108,9 @@ document.addEventListener("change", async (ev) => {
   }
   if (ev.target.matches("[data-listado-zona]")) { UI.listado.zona = ev.target.value; abrirListado(); return; }
   if (ev.target.matches("[data-filtro-extra]")) { UI.filtroDisp.extra = ev.target.checked; render(); return; }
-  if (ev.target.matches("[data-filtro-zona]")) { Object.assign(UI.filtroDescarga, { zona: ev.target.value, planta: "", lugar: "", cuadro: "" }); actualizarListaEspacios(); }
-  if (ev.target.matches("[data-filtro-lugar]")) { UI.filtroDescarga.lugar = ev.target.value; actualizarListaEspacios(); }
+  if (ev.target.matches("[data-filtro-zona]")) { Object.assign(UI.filtroDescarga, { zona: ev.target.value, planta: "", lugar: "", cuadro: "", fila: "" }); actualizarListaEspacios(); }
+  if (ev.target.matches("[data-filtro-lugar]")) { Object.assign(UI.filtroDescarga, { lugar: ev.target.value, fila: "" }); actualizarListaEspacios(); }
+  if (ev.target.matches("[data-filtro-fila]")) { UI.filtroDescarga.fila = ev.target.value; actualizarListaEspacios(); }
   if (ev.target.matches("[data-filtro-cuadro]")) { UI.filtroDescarga.cuadro = ev.target.value; actualizarListaEspacios(); }
 });
 
@@ -1090,16 +1135,43 @@ document.addEventListener("submit", async (ev) => {
       abrirFirma("tarea", datos, `<dt>Tarea</dt><dd>${nombreTarea(datos.tipo_tarea)} (${datos.porcentaje}%)</dd><dt>Zona</dt><dd>${esc(nombreZona(datos.zona))}</dd>${datos.observaciones ? `<dt>Obs.</dt><dd>${esc(datos.observaciones)}</dd>` : ""}${UI.fotos.length ? `<dt>Fotos</dt><dd>${UI.fotos.length}</dd>` : ""}`);
       UI.firmaPendiente.fotos = UI.fotos.slice();
     } else if (tipoForm === "descarga") {
-      const esp = Datos.estado.espacios.find((e) => e.id === Number(f.espacio.value));
+      let esp, altaManual = false;
+      if (f.tipo.value === "nicho") {
+        const fd = UI.filtroDescarga;
+        const zona = Datos.estado.zonas.find((z) => z.id === Number(fd.zona));
+        const num = Number(f.nicho_num.value), fila = Number(fd.fila);
+        if (!zona) { avisar("Elegí la zona."); return; }
+        if (zona.codigo === "PAB_AMARILLO" && !fd.planta) { avisar("Elegí la planta."); return; }
+        if (zona.codigo === "SV_NICHOS" && !fd.lugar) { avisar("Elegí el cuadro / bloque."); return; }
+        if (!fila) { avisar("Elegí la fila."); return; }
+        if (!(num > 0)) { avisar("Escribí el número de nicho."); return; }
+        const lugar = zona.codigo === "PAB_AMARILLO" ? PLANTAS[Number(fd.planta) - 1] : zona.codigo === "SV_NICHOS" ? fd.lugar : undefined;
+        esp = Datos.estado.espacios.find((e) => e.tipo === "nicho" && e.zona === zona.id && (e.lugar ?? "") === (lugar ?? "") && e.fila === fila && e.numero === num);
+        if (esp && !["disponible", "reservado"].includes(esp.estado)) {
+          avisar(`El nicho ${num} de la fila ${fila} figura ${esp.estado === "ocupado" ? "ocupado" : esp.estado === "en_mantenimiento" ? "en mantenimiento" : "inhabilitado"}. Revisá el número.`);
+          return;
+        }
+        if (!esp) {
+          altaManual = true;
+          esp = {
+            id: Math.max(0, ...Datos.estado.espacios.map((e) => e.id)) + 1, zona: zona.id, tipo: "nicho", tam: f.tam.value,
+            planta: zona.codigo === "PAB_AMARILLO" ? Number(fd.planta) : undefined, lugar, fila, numero: num,
+          };
+          esp.ub = ubNicho(esp, zona.codigo === "SV_NICHOS");
+        }
+      } else {
+        esp = Datos.estado.espacios.find((e) => e.id === Number(f.espacio.value));
+      }
       if (!esp) { avisar("Elegí un espacio disponible."); return; }
       const datos = {
         espacio_id: esp.id, ubicacion: esp.ub, zona: esp.zona, tipo: esp.tipo, tam: esp.tam,
-        planta: esp.planta, cuadro: esp.cuadro, lugar: esp.tipo === "nicho" ? esp.lugar : undefined, numero: esp.numero,
+        planta: esp.planta, cuadro: esp.cuadro, lugar: esp.tipo === "nicho" ? esp.lugar : undefined, fila: esp.fila, numero: esp.numero,
+        alta_manual: altaManual || undefined,
         difunto: { nombre: f.dif_nombre.value.trim(), dni: f.dif_dni.value.trim() || undefined, fecha: f.dif_fecha.value },
         expediente: f.expediente.value.trim() || undefined, observaciones: f.observaciones.value.trim() || undefined,
       };
       UI.borrador = { accion: "descarga", tipo: esp.tipo, tam: esp.tam, zona: UI.filtroDescarga.zona };
-      abrirFirma("descarga", datos, `<dt>Zona</dt><dd>${esc(nombreZona(esp.zona))}</dd>${esp.planta ? `<dt>Planta</dt><dd>${PLANTAS[esp.planta - 1]}</dd>` : ""}<dt>Espacio</dt><dd>${esc(esp.ub)}${esp.tam === "extraordinario" ? " · <strong>" + nombreTamano(esp) + "</strong>" : ""}</dd><dt>Difunto</dt><dd>${esc(datos.difunto.nombre)}${datos.difunto.dni ? " · DNI " + esc(datos.difunto.dni) : ""}</dd>`);
+      abrirFirma("descarga", datos, `<dt>Zona</dt><dd>${esc(nombreZona(esp.zona))}</dd>${esp.planta ? `<dt>Planta</dt><dd>${PLANTAS[esp.planta - 1]}</dd>` : ""}<dt>Espacio</dt><dd>${esc(esp.ub)}${esp.tam === "extraordinario" ? " · <strong>" + nombreTamano(esp) + "</strong>" : ""}${altaManual ? '<br><span class="muted chico">Cargado a mano: no figuraba en la lista de libres, se agrega al registro.</span>' : ""}</dd><dt>Difunto</dt><dd>${esc(datos.difunto.nombre)}${datos.difunto.dni ? " · DNI " + esc(datos.difunto.dni) : ""}</dd>`);
     } else if (tipoForm === "firma") {
       const c = $("#lienzo");
       if (!c.trazos) { avisar("Falta tu firma en el recuadro."); return; }
