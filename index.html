@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cementerio San Vicente Parque — Arquitectura</title>
+<meta name="robots" content="noindex">
+<style>
+  /* Página de lectura: muestra README.md (arquitectura + diagramas) de esta carpeta. */
+  :root {
+    --bg: #f7f7f5; --fg: #1d1f21; --muted: #5c6166; --line: #d9dcdf;
+    --card: #ffffff; --accent: #1f5f8b; --code: #eef1f4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #15171a; --fg: #e6e8ea; --muted: #a1a7ad; --line: #30353b;
+            --card: #1c1f23; --accent: #7bb6e0; --code: #23272c; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 1.8rem; line-height: 1.25; margin: 0 0 4px; }
+  h2 { margin-top: 2.2rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+  a { color: var(--accent); }
+  table { border-collapse: collapse; width: 100%; display: block; overflow-x: auto; margin: 1rem 0; }
+  th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+  th { background: var(--code); }
+  code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size: .9em; }
+  pre { background: var(--code); padding: 12px; border-radius: 8px; overflow-x: auto; }
+  pre code { padding: 0; background: none; }
+  .mermaid { background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+             padding: 12px; overflow-x: auto; margin: 1rem 0; text-align: center; }
+  .descargas { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0; }
+  .descargas a { border: 1px solid var(--line); background: var(--card); border-radius: 6px;
+                 padding: 6px 12px; text-decoration: none; }
+  #estado { color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <nav class="descargas">
+    <a href="esquema.sql" download>Descargar esquema.sql</a>
+    <a href="openapi.yaml" download>Descargar openapi.yaml</a>
+    <a href="https://editor.swagger.io/" target="_blank" rel="noopener">Abrir editor Swagger (pegar openapi.yaml)</a>
+  </nav>
+  <article id="contenido"><p id="estado">Cargando documento…</p></article>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>
+(async () => {
+  const destino = document.getElementById("contenido");
+  try {
+    const res = await fetch("README.md", { cache: "no-cache" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const md = await res.text();
+    const renderer = new marked.Renderer();
+    const codigoBase = renderer.code.bind(renderer);
+    renderer.code = (code, lang, escaped) => {
+      if (lang === "mermaid") {
+        const div = document.createElement("div");
+        div.textContent = code;
+        return '<div class="mermaid">' + div.innerHTML + "</div>";
+      }
+      return codigoBase(code, lang, escaped);
+    };
+    destino.innerHTML = marked.parse(md, { renderer });
+    const oscuro = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    mermaid.initialize({ startOnLoad: false, theme: oscuro ? "dark" : "default", securityLevel: "strict" });
+    await mermaid.run({ querySelector: ".mermaid" });
+  } catch (e) {
+    destino.innerHTML = '<p>No se pudo cargar el documento. Podés leerlo directo en <a href="README.md">README.md</a>.</p>';
+    console.error(e);
+  }
+})();
+</script>
+</body>
+</html>
