@@ -14,7 +14,7 @@
 --   8. Alertas: umbrales de stock y registro de alertas
 --   9. Vistas: semáforo de zonas y resumen de disponibilidad
 --  10. Funciones transaccionales y triggers
---  11. Datos iniciales (zonas 1–28, sectores especiales, puntos de referencia)
+--  11. Datos iniciales (Parque zonas 1–28, sectores de fosas y nichos, puntos de referencia)
 --
 -- Convenciones:
 --   * Toda marca de tiempo es TIMESTAMPTZ. La hora "oficial" de un registro es
@@ -39,7 +39,13 @@ SET search_path = cementerio, public;
 CREATE TYPE rol_usuario        AS ENUM ('directivo', 'capataz', 'operario');
 CREATE TYPE tipo_zona          AS ENUM ('parque_fosas', 'nichos', 'mixta', 'especial');
 CREATE TYPE categoria_sector   AS ENUM (
-  'zona_numerada', 'pabellon_amarillo', 'memorial', 'osario', 'otro');
+  'parque',             -- zonas 1 a 28 (fosas)
+  'seccion_vieja',      -- tiene un sector de fosas y otro de nichos
+  'seccion_nueva',      -- fosas
+  'pabellon_amarillo',  -- nichos
+  'central',            -- nichos
+  'lateral',            -- nichos
+  'otro');
 CREATE TYPE tipo_punto_ref     AS ENUM (
   'acceso', 'administracion', 'cruz_mayor', 'rotonda', 'osario', 'memorial',
   'banos', 'deposito_herramientas', 'canilla', 'otro');
@@ -106,7 +112,7 @@ CREATE INDEX idx_dispositivos_usuario ON dispositivos(usuario_id) WHERE revocado
 -- 3. Topología ----------------------------------------------------------------
 CREATE TABLE zonas (
   id               SMALLSERIAL PRIMARY KEY,
-  codigo           TEXT NOT NULL UNIQUE,              -- 'Z01'..'Z28', 'PAB_AMARILLO', 'MEMORIAL', 'OSARIO'
+  codigo           TEXT NOT NULL UNIQUE,              -- 'Z01'..'Z28', 'SV_FOSAS', 'SN_FOSAS', 'PAB_AMARILLO', 'CENTRAL', 'LATERAL', 'SV_NICHOS'
   numero           SMALLINT UNIQUE CHECK (numero BETWEEN 1 AND 28),
   nombre           TEXT NOT NULL,
   categoria        categoria_sector NOT NULL,
@@ -116,8 +122,8 @@ CREATE TABLE zonas (
   requiere_corte_cesped BOOLEAN NOT NULL DEFAULT TRUE,
   activa           BOOLEAN NOT NULL DEFAULT TRUE,
   observaciones    TEXT,
-  CONSTRAINT zona_numerada_tiene_numero
-    CHECK ((categoria = 'zona_numerada') = (numero IS NOT NULL))
+  CONSTRAINT parque_tiene_numero
+    CHECK ((categoria = 'parque') = (numero IS NOT NULL))
 );
 CREATE INDEX idx_zonas_geom ON zonas USING GIST (geom);
 
@@ -754,13 +760,16 @@ END $$;
 -- 11. Datos iniciales ---------------------------------------------------------
 -- Zonas 1 a 28: solo fosas (parque). Los nichos están en el Pabellón Amarillo.
 INSERT INTO zonas (codigo, numero, nombre, categoria, tipo)
-SELECT 'Z' || lpad(n::text, 2, '0'), n, 'Zona ' || n, 'zona_numerada', 'parque_fosas'
+SELECT 'Z' || lpad(n::text, 2, '0'), n, 'Zona ' || n, 'parque', 'parque_fosas'
 FROM generate_series(1, 28) AS n;
 
 INSERT INTO zonas (codigo, nombre, categoria, tipo, requiere_corte_cesped) VALUES
-  ('PAB_AMARILLO',  'Pabellón Amarillo',    'pabellon_amarillo',    'nichos',  FALSE),
-  ('MEMORIAL',      'Memorial',             'memorial',             'especial',TRUE),
-  ('OSARIO',        'Osario',               'osario',               'especial',FALSE);
+  ('SV_FOSAS',      'Sección Vieja (fosas)',  'seccion_vieja',     'parque_fosas', TRUE),
+  ('SN_FOSAS',      'Sección Nueva',          'seccion_nueva',     'parque_fosas', TRUE),
+  ('PAB_AMARILLO',  'Pabellón Amarillo',      'pabellon_amarillo', 'nichos',       FALSE),
+  ('CENTRAL',       'Central',                'central',           'nichos',       FALSE),
+  ('LATERAL',       'Lateral',                'lateral',           'nichos',       FALSE),
+  ('SV_NICHOS',     'Sección Vieja (nichos)', 'seccion_vieja',     'nichos',       FALSE);
 
 INSERT INTO puntos_referencia (tipo, nombre, zona_id) VALUES
   ('acceso',           'Ingreso por Calle Soto',              NULL),
@@ -768,8 +777,6 @@ INSERT INTO puntos_referencia (tipo, nombre, zona_id) VALUES
   ('administracion',   'Administración',                      NULL),
   ('cruz_mayor',       'Cruz Mayor',                          NULL),
   ('rotonda',          'Rotonda',                             NULL),
-  ('osario',           'Osario',            (SELECT id FROM zonas WHERE codigo = 'OSARIO')),
-  ('memorial',         'Memorial',          (SELECT id FROM zonas WHERE codigo = 'MEMORIAL')),
   ('banos',            'Baños',                               NULL);
 
 -- Plazos de referencia (ajustables por la Dirección).
