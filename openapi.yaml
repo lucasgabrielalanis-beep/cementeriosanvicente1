@@ -167,12 +167,12 @@ paths:
                 siguiente_cursor: null
                 items:
                   - id: 18234
-                    codigo: N-5-B-3-41
+                    codigo: F-5-C12-7
                     zona_id: 5
-                    tipo_espacio: nicho
+                    tipo_espacio: fosa
                     tipo_tamano: extraordinario
                     estado: disponible
-                    ubicacion: { pabellon: B, nivel: 3, columna: 41 }
+                    ubicacion: { cuadro: 12, fosa: 7 }
                     coordenadas: { lat: -31.45231, lng: -64.22087 }
                     version: 4
         '400': { $ref: '#/components/responses/Validacion' }
@@ -554,7 +554,7 @@ components:
         estado: { $ref: '#/components/schemas/EstadoEspacio' }
         ubicacion:
           type: object
-          description: 'Nicho: pabellon/nivel/columna. Fosa: seccion/fila/numero.'
+          description: 'Nicho: pabellon/nivel/columna. Fosa en zonas 1 a 30: cuadro (1 a 40) y fosa. Fosa en secciones: seccion/fila/numero.'
           additionalProperties: true
         coordenadas: { $ref: '#/components/schemas/Coordenadas' }
         reservado_hasta: { type: string, format: date-time, nullable: true }
