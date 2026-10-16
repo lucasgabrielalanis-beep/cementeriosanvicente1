@@ -739,6 +739,55 @@ BEGIN
   RETURN v_op;
 END $$;
 
+-- 10.7 bis Registrar exhumación: el nicho o la fosa queda libre (vuelve a contar como
+-- disponible en el resumen de stock). Misma verificación de firma que la descarga.
+CREATE OR REPLACE FUNCTION registrar_exhumacion(
+  p_espacio_id      BIGINT,
+  p_difunto_id      UUID,
+  p_ejecutada_por   UUID,
+  p_supervisada_por UUID,
+  p_realizada_en    TIMESTAMPTZ,
+  p_firma_id        UUID,
+  p_ubicacion       geometry,
+  p_expediente      TEXT,
+  p_destino         TEXT,           -- Osario, Cremación, Reducción, Traslado...
+  p_idempotency_key TEXT
+) RETURNS operaciones_sepultura LANGUAGE plpgsql AS $$
+DECLARE
+  v_esp   espacios_sepultura;
+  v_op    operaciones_sepultura;
+  v_firma firmas_digitales;
+BEGIN
+  SELECT * INTO v_op FROM operaciones_sepultura WHERE idempotency_key = p_idempotency_key;
+  IF FOUND THEN RETURN v_op; END IF;
+
+  SELECT * INTO v_firma FROM firmas_digitales WHERE id = p_firma_id;
+  IF NOT FOUND OR NOT v_firma.verificada OR v_firma.usuario_id <> p_ejecutada_por THEN
+    RAISE EXCEPTION 'Firma inexistente, no verificada o de otro usuario' USING ERRCODE = 'P0001';
+  END IF;
+
+  SELECT * INTO v_esp FROM espacios_sepultura WHERE id = p_espacio_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Espacio % inexistente', p_espacio_id USING ERRCODE = 'P0002';
+  END IF;
+  IF v_esp.estado <> 'ocupado' THEN
+    RAISE EXCEPTION 'El espacio % no figura ocupado (estado: %)', v_esp.codigo, v_esp.estado
+      USING ERRCODE = 'P0003';
+  END IF;
+
+  INSERT INTO operaciones_sepultura(tipo_operacion, espacio_id, difunto_id, expediente,
+         ejecutada_por, supervisada_por, realizada_en, firma_id, ubicacion, observaciones, idempotency_key)
+  VALUES ('exhumacion', p_espacio_id, p_difunto_id, p_expediente,
+          p_ejecutada_por, p_supervisada_por, p_realizada_en, p_firma_id, p_ubicacion,
+          'Destino: ' || coalesce(p_destino, 'sin informar'), p_idempotency_key)
+  RETURNING * INTO v_op;
+
+  PERFORM set_config('app.operacion_id', v_op.id::text, true);
+  PERFORM set_config('app.usuario_id', p_ejecutada_por::text, true);
+  UPDATE espacios_sepultura SET estado = 'disponible' WHERE id = p_espacio_id;  -- historial + evaluar_stock()
+  RETURN v_op;
+END $$;
+
 -- 10.8 Completar tarea de mantenimiento (crea la tarea si vino "suelta" del campo).
 CREATE OR REPLACE FUNCTION completar_tarea(
   p_tarea_id        UUID,          -- NULL = tarea no programada registrada en campo
