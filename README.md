@@ -88,6 +88,7 @@ erDiagram
 |---|---|
 | `zonas` | Fosas: Parque (zonas 1–28), zonas COVID (29 y 30), Sección Vieja y Sección Nueva. Nichos: Pabellón Amarillo, Central, Lateral y Sección Vieja. Tipo: `parque_fosas`, `nichos`, `mixta`, `especial`. Geometría. |
 | `puntos_referencia` | Ingresos (Calle Soto y Calle Martin Cartechini), Administración, Cruz Mayor, Rotonda, Baños… para orientarse en campo. |
+| (Pabellón Amarillo) | Los nichos tienen `planta`: 1 = primera, 2 = segunda, 3 = tercera planta. |
 | `bloques_seccion` | Plano de la Sección Vieja (sector de nichos): sector, cuadro (letra), bloque y "Prop.". Las calles y pasajes de esa sección van en `puntos_referencia`. |
 | `espacios_sepultura` | Nichos (pabellón/nivel/columna) y fosas (zonas 1–30: zona, cuadro 1–40 y fosa; secciones: sección/fila/número); tamaño `normal`/`extraordinario`; estado; `version` para concurrencia. |
 | `firmas_digitales` | Una por acción de campo: quién, cuándo (cliente + servidor), qué (hash), dónde (GPS), con qué dispositivo; encadenada por hash. **Inmutable.** |
