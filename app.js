@@ -512,7 +512,7 @@ function detalleZona(id) {
   const s = semaforoZona(z);
   const resp = Datos.estado.usuarios.find((u) => u.id === z.responsable);
   const regs = Datos.estado.registros.filter((r) => r.payload.datos.zona === id).slice(-6).reverse();
-  const esCampo = UI.usuario && grupoRol(UI.usuario) === "campo" && UI.usuario.zonas.includes(id);
+  const esCampo = UI.usuario && grupoRol(UI.usuario) === "campo";
   abrirModal(`<div class="fila entre"><h2 style="margin:0">${esc(z.nombre)}</h2>${chipColor(s.color)}</div>
     <p class="muted">${TIPOS_ZONA[z.tipo]} · Responsable: ${resp ? esc(resp.nombre) : "sin asignar"}</p>
     <div class="tabla-scroll"><table>
@@ -642,11 +642,19 @@ function vistaMisZonas() {
 function vistaTarea() {
   const u = UI.usuario;
   const b = UI.borrador?.accion === "tarea" ? UI.borrador : { zona: u.zonas[0], tipo_tarea: "corte_cesped", porcentaje: 100, observaciones: "" };
-  const zonas = Datos.estado.zonas.filter((z) => u.zonas.includes(z.id));
+  // Se puede registrar en cualquier zona o sector (no solo en las asignadas).
+  const todas = Datos.estado.zonas;
+  const opcion = (z) => `<option value="${z.id}" ${z.id === b.zona ? "selected" : ""}>${esc(z.nombre)} — ${COLORES[semaforoZona(z).color]}</option>`;
+  const grupo = (titulo, lista) => (lista.length ? `<optgroup label="${titulo}">${lista.map(opcion).join("")}</optgroup>` : "");
+  const opciones =
+    grupo("Parque — zonas 1 a 28", todas.filter((z) => z.numero && !z.covid)) +
+    grupo("Zonas COVID", todas.filter((z) => z.covid)) +
+    grupo("Sección Vieja y Sección Nueva (fosas)", todas.filter((z) => !z.numero && z.tipo === "parque_fosas")) +
+    grupo("Nichos", todas.filter((z) => z.tipo === "nichos"));
   return `<h1>Registrar tarea</h1>
     <p class="muted">Al terminar el trabajo, completá y firmá. La fecha, la hora y tu ubicación se toman solas.</p>
     <form class="form" data-form="tarea">
-      <label>Zona<select name="zona" required>${zonas.map((z) => `<option value="${z.id}" ${z.id === b.zona ? "selected" : ""}>${esc(z.nombre)} — ${COLORES[semaforoZona(z).color]}</option>`).join("")}</select></label>
+      <label>Zona<select name="zona" required>${opciones}</select></label>
       <fieldset style="border:0;padding:0;margin:0"><legend style="font-weight:600;margin-bottom:6px">Tarea realizada</legend>
         <div class="opciones">${Object.entries(TAREAS).map(([k, t]) => `<button type="button" class="opcion" data-elegir="tipo_tarea" data-valor="${k}" aria-pressed="${k === b.tipo_tarea}">${t}</button>`).join("")}</div>
         <input type="hidden" name="tipo_tarea" value="${b.tipo_tarea}">
