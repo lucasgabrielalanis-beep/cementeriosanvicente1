@@ -395,10 +395,10 @@ async function firmarYRegistrar(usuario, accion, datos, pin, trazoDataUrl, gps, 
   } else if (accion === "descarga") {
     const e = Datos.estado.espacios.find((x) => x.id === datos.espacio_id);
     if (!e && datos.alta_manual) {
-      // Nicho cargado a mano que no figuraba en la lista: se agrega ya ocupado.
+      // Nicho o fosa cargado a mano que no figuraba en la lista: se agrega ya ocupado.
       Datos.estado.espacios.push({
-        id: datos.espacio_id, zona: datos.zona, tipo: "nicho", tam: datos.tam, estado: "ocupado",
-        planta: datos.planta, lugar: datos.lugar, fila: datos.fila, numero: datos.numero, ub: datos.ubicacion, alta_manual: true,
+        id: datos.espacio_id, zona: datos.zona, tipo: datos.tipo, tam: datos.tam, estado: "ocupado",
+        planta: datos.planta, lugar: datos.lugar, fila: datos.fila, cuadro: datos.cuadro, numero: datos.numero, ub: datos.ubicacion, alta_manual: true,
       });
     } else {
       if (!e || !["disponible", "reservado"].includes(e.estado)) throw new Error("Ese espacio ya no está disponible. Elegí otro.");
@@ -861,13 +861,13 @@ function vistaDescarga() {
       <input type="hidden" name="tipo" value="${b.tipo}"><input type="hidden" name="tam" value="${b.tam}">
       <label>Zona<select name="zona" data-filtro-zona><option value="">Todas las zonas</option></select></label>
       <div id="sub-ubicacion" hidden></div>
-      <label id="elegir-espacio">Espacio disponible<select name="espacio"></select></label>
-      <div id="nicho-manual" class="form" hidden>
-        <label>Fila<select name="fila" data-filtro-fila></select></label>
-        <label>Número de nicho <span class="muted">(escribilo a mano)</span>
-          <input name="nicho_num" type="number" min="1" max="99999" inputmode="numeric" autocomplete="off" placeholder="Ej.: 125"></label>
+      <div id="carga-manual" class="form">
+        <label id="campo-fila">Fila<select name="fila" data-filtro-fila></select></label>
+        <label id="campo-cuadro">Cuadro<select name="cuadro" data-filtro-cuadro></select></label>
+        <label><span id="titulo-numero">Número de nicho</span> <span class="muted">(escribilo a mano)</span>
+          <input name="numero_manual" type="number" min="1" max="99999" inputmode="numeric" autocomplete="off" placeholder="Ej.: 125"></label>
         <div><span class="muted chico">Libres en esta ubicación (tocá uno para completarlo):</span>
-          <ul class="espacios-libres" id="nichos-sugeridos"></ul></div>
+          <ul class="espacios-libres" id="sugeridos"></ul></div>
       </div>
       <h2 style="margin:4px 0 0">Datos de la persona fallecida</h2>
       <label>Apellido y nombre<input name="dif_nombre" required maxlength="120" autocomplete="off"></label>
@@ -889,9 +889,11 @@ function actualizarListaEspacios() {
   const porZona = {};
   disponibles.forEach((e) => (porZona[e.zona] = (porZona[e.zona] || 0) + 1));
   const selZona = form.elements.zona;
-  selZona.innerHTML = `<option value="">Todas las zonas (${disponibles.length})</option>` +
-    Object.keys(porZona).map(Number).sort((a, b) => a - b).map((id) => `<option value="${id}" ${String(id) === String(f.zona) ? "selected" : ""}>${esc(nombreZona(id))} (${porZona[id]})</option>`).join("");
-  if (f.zona && !porZona[f.zona]) f.zona = "";
+  // Todas las zonas del tipo (aunque no tengan libres registrados: el número se puede cargar a mano).
+  const zonasTipo = Datos.estado.zonas.filter((z) => (f.tipo === "nicho" ? z.tipo === "nichos" : z.tipo === "parque_fosas"));
+  if (f.zona && !zonasTipo.some((z) => String(z.id) === String(f.zona))) f.zona = "";
+  selZona.innerHTML = `<option value="">Elegí la zona</option>` +
+    zonasTipo.map((z) => `<option value="${z.id}" ${String(z.id) === String(f.zona) ? "selected" : ""}>${esc(z.nombre)} (${porZona[z.id] || 0} libres)</option>`).join("");
   const enZona = disponibles.filter((e) => !f.zona || e.zona === Number(f.zona));
 
   // Datos de ubicación según la zona elegida: planta (Pabellón Amarillo),
@@ -908,10 +910,6 @@ function actualizarListaEspacios() {
     const lugares = [...new Set(enZona.map((e) => e.lugar))].sort((a, b) => a.localeCompare(b, "es", { numeric: true }));
     html = `<label>Cuadro / Bloque<select data-filtro-lugar><option value="">Todos (${enZona.length})</option>
       ${lugares.map((l) => `<option value="${esc(l)}" ${l === f.lugar ? "selected" : ""}>${esc(l)} (${cuantos((e) => e.lugar === l)})</option>`).join("")}</select></label>`;
-  } else if (zonaSel?.numero && f.tipo === "fosa") {
-    const cuadros = [...new Set(enZona.map((e) => e.cuadro))].sort((a, b) => a - b);
-    html = `<label>Cuadro<select data-filtro-cuadro><option value="">Todos (${enZona.length})</option>
-      ${cuadros.map((c) => `<option value="${c}" ${String(c) === String(f.cuadro) ? "selected" : ""}>Cuadro ${c} (${cuantos((e) => e.cuadro === c)})</option>`).join("")}</select></label>`;
   }
   if (sub) { sub.innerHTML = html; sub.hidden = !html; }
 
@@ -919,24 +917,32 @@ function actualizarListaEspacios() {
     .filter((e) => !f.planta || e.planta === Number(f.planta))
     .filter((e) => !f.lugar || e.lugar === f.lugar)
     .filter((e) => !f.cuadro || e.cuadro === Number(f.cuadro))
-    .sort((a, b) => a.zona - b.zona || (a.cuadro ?? 0) - (b.cuadro ?? 0) || (a.lugar ?? "").localeCompare(b.lugar ?? "", "es", { numeric: true }) || a.numero - b.numero).slice(0, 200);
-  form.elements.espacio.innerHTML = lista.length
-    ? lista.map((e) => `<option value="${e.id}">${f.zona ? "" : esc(nombreZona(e.zona)) + " · "}${esc(e.ub)}</option>`).join("")
-    : `<option value="">No hay ${nombreStock(f.tipo, f.tam).toLowerCase()} disponibles</option>`;
+    .sort((a, b) => a.zona - b.zona || (a.cuadro ?? 0) - (b.cuadro ?? 0) || (a.lugar ?? "").localeCompare(b.lugar ?? "", "es", { numeric: true }) || (a.fila ?? 0) - (b.fila ?? 0) || a.numero - b.numero);
 
-  // Nichos: fila a elegir y número de nicho escrito a mano (con los libres como ayuda).
+  // Carga a mano: nichos → fila + número; fosas de las zonas 1 a 30 → cuadro + número;
+  // fosas de las secciones → solo número. Los libres se muestran como ayuda.
   const esNicho = f.tipo === "nicho";
-  $("#elegir-espacio").hidden = esNicho;
-  $("#nicho-manual").hidden = !esNicho;
+  const conCuadro = !esNicho && !!zonaSel?.numero;
+  $("#campo-fila").hidden = !esNicho;
+  $("#campo-cuadro").hidden = !conCuadro;
+  $("#titulo-numero").textContent = esNicho ? "Número de nicho" : "Número de fosa";
   if (esNicho) {
     const porFila = (n) => lista.filter((e) => e.fila === n).length;
     form.elements.fila.innerHTML = `<option value="">Elegí la fila</option>` +
       Array.from({ length: MAX_FILAS }, (_, i) => i + 1).map((n) => `<option value="${n}" ${String(n) === String(f.fila) ? "selected" : ""}>Fila ${n}${porFila(n) ? ` (${porFila(n)} libres)` : ""}</option>`).join("");
-    const sugeridos = lista.filter((e) => !f.fila || e.fila === Number(f.fila)).slice(0, 40);
-    $("#nichos-sugeridos").innerHTML = f.zona
-      ? sugeridos.map((e) => `<li><button type="button" class="enlace" data-sugerido="${e.id}">${f.fila ? "" : `Fila ${e.fila} · `}N° ${e.numero}${e.tam === "extraordinario" ? " · " + nombreTamano(e) : ""}${f.planta || !e.planta ? "" : ` · ${PLANTAS[e.planta - 1]}`}${f.lugar || !e.lugar || e.planta ? "" : ` · ${esc(e.lugar)}`}</button></li>`).join("") || '<li class="muted">No hay libres registrados acá. Igual podés cargar el número a mano.</li>'
-      : '<li class="muted">Elegí primero la zona.</li>';
   }
+  if (conCuadro) {
+    const porCuadro = (n) => lista.filter((e) => e.cuadro === n).length;
+    form.elements.cuadro.innerHTML = `<option value="">Elegí el cuadro</option>` +
+      Array.from({ length: MAX_CUADROS }, (_, i) => i + 1).map((n) => `<option value="${n}" ${String(n) === String(f.cuadro) ? "selected" : ""}>Cuadro ${n}${porCuadro(n) ? ` (${porCuadro(n)} libres)` : ""}</option>`).join("");
+  }
+  const sugeridos = lista.filter((e) => (!f.fila || e.fila === Number(f.fila))).slice(0, 40);
+  const textoSugerido = (e) => esNicho
+    ? `${f.fila ? "" : `Fila ${e.fila} · `}N° ${e.numero}${f.planta || !e.planta ? "" : ` · ${PLANTAS[e.planta - 1]}`}${f.lugar || !e.lugar || e.planta ? "" : ` · ${esc(e.lugar)}`}`
+    : `${e.cuadro && !f.cuadro ? `Cuadro ${e.cuadro} · ` : ""}Fosa ${e.numero}`;
+  $("#sugeridos").innerHTML = f.zona
+    ? sugeridos.map((e) => `<li><button type="button" class="enlace" data-sugerido="${e.id}">${textoSugerido(e)}${e.tam === "extraordinario" ? " · " + nombreTamano(e) : ""}</button></li>`).join("") || '<li class="muted">No hay libres registrados acá. Igual podés cargar el número a mano.</li>'
+    : '<li class="muted">Elegí primero la zona.</li>';
 }
 
 function vistaMisRegistros() {
@@ -1044,9 +1050,10 @@ document.addEventListener("click", async (ev) => {
     if (e && form) {
       if (e.planta) UI.filtroDescarga.planta = String(e.planta);
       if (e.lugar && !e.planta) UI.filtroDescarga.lugar = e.lugar;
-      UI.filtroDescarga.fila = String(e.fila);
+      if (e.fila) UI.filtroDescarga.fila = String(e.fila);
+      if (e.cuadro) UI.filtroDescarga.cuadro = String(e.cuadro);
       actualizarListaEspacios();
-      form.elements.nicho_num.value = e.numero;
+      form.elements.numero_manual.value = e.numero;
     }
     return;
   }
@@ -1136,11 +1143,17 @@ document.addEventListener("submit", async (ev) => {
       UI.firmaPendiente.fotos = UI.fotos.slice();
     } else if (tipoForm === "descarga") {
       let esp, altaManual = false;
+      const fd = UI.filtroDescarga;
+      const zona = Datos.estado.zonas.find((z) => z.id === Number(fd.zona));
+      const num = Number(f.numero_manual.value);
+      if (!zona) { avisar("Elegí la zona."); return; }
+      const ocupadoTxt = (e) => {
+        const a = e.tipo === "fosa" ? "a" : "o";
+        return e.estado === "ocupado" ? "ocupad" + a : e.estado === "en_mantenimiento" ? "en mantenimiento" : "inhabilitad" + a;
+      };
+      const nuevoId = () => Math.max(0, ...Datos.estado.espacios.map((e) => e.id)) + 1;
       if (f.tipo.value === "nicho") {
-        const fd = UI.filtroDescarga;
-        const zona = Datos.estado.zonas.find((z) => z.id === Number(fd.zona));
-        const num = Number(f.nicho_num.value), fila = Number(fd.fila);
-        if (!zona) { avisar("Elegí la zona."); return; }
+        const fila = Number(fd.fila);
         if (zona.codigo === "PAB_AMARILLO" && !fd.planta) { avisar("Elegí la planta."); return; }
         if (zona.codigo === "SV_NICHOS" && !fd.lugar) { avisar("Elegí el cuadro / bloque."); return; }
         if (!fila) { avisar("Elegí la fila."); return; }
@@ -1148,21 +1161,32 @@ document.addEventListener("submit", async (ev) => {
         const lugar = zona.codigo === "PAB_AMARILLO" ? PLANTAS[Number(fd.planta) - 1] : zona.codigo === "SV_NICHOS" ? fd.lugar : undefined;
         esp = Datos.estado.espacios.find((e) => e.tipo === "nicho" && e.zona === zona.id && (e.lugar ?? "") === (lugar ?? "") && e.fila === fila && e.numero === num);
         if (esp && !["disponible", "reservado"].includes(esp.estado)) {
-          avisar(`El nicho ${num} de la fila ${fila} figura ${esp.estado === "ocupado" ? "ocupado" : esp.estado === "en_mantenimiento" ? "en mantenimiento" : "inhabilitado"}. Revisá el número.`);
+          avisar(`El nicho ${num} de la fila ${fila} figura ${ocupadoTxt(esp)}. Revisá el número.`);
           return;
         }
         if (!esp) {
           altaManual = true;
           esp = {
-            id: Math.max(0, ...Datos.estado.espacios.map((e) => e.id)) + 1, zona: zona.id, tipo: "nicho", tam: f.tam.value,
+            id: nuevoId(), zona: zona.id, tipo: "nicho", tam: f.tam.value,
             planta: zona.codigo === "PAB_AMARILLO" ? Number(fd.planta) : undefined, lugar, fila, numero: num,
           };
           esp.ub = ubNicho(esp, zona.codigo === "SV_NICHOS");
         }
       } else {
-        esp = Datos.estado.espacios.find((e) => e.id === Number(f.espacio.value));
+        const cuadro = zona.numero ? Number(fd.cuadro) : undefined;
+        if (zona.numero && !cuadro) { avisar("Elegí el cuadro."); return; }
+        if (!(num > 0)) { avisar("Escribí el número de fosa."); return; }
+        esp = Datos.estado.espacios.find((e) => e.tipo === "fosa" && e.zona === zona.id && (e.cuadro ?? 0) === (cuadro ?? 0) && e.numero === num);
+        if (esp && !["disponible", "reservado"].includes(esp.estado)) {
+          avisar(`La fosa ${num}${cuadro ? ` del cuadro ${cuadro}` : ""} figura ${ocupadoTxt(esp)}. Revisá el número.`);
+          return;
+        }
+        if (!esp) {
+          altaManual = true;
+          esp = { id: nuevoId(), zona: zona.id, tipo: "fosa", tam: f.tam.value, cuadro, numero: num };
+          esp.ub = cuadro ? `Cuadro ${cuadro} · Fosa ${num}` : `Fosa N° ${num}`;
+        }
       }
-      if (!esp) { avisar("Elegí un espacio disponible."); return; }
       const datos = {
         espacio_id: esp.id, ubicacion: esp.ub, zona: esp.zona, tipo: esp.tipo, tam: esp.tam,
         planta: esp.planta, cuadro: esp.cuadro, lugar: esp.tipo === "nicho" ? esp.lugar : undefined, fila: esp.fila, numero: esp.numero,
