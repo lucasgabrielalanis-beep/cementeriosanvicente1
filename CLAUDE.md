@@ -11,5 +11,6 @@
   - `README.md`: arquitectura, alertas y diagramas (Mermaid).
   - `documento.html`: el README como página (generada, no editar a mano). Después de cambiar el README: `cd herramientas && npm install && npm run pagina`. Mermaid va en `vendor/`.
 - Se publica en Vercel como sitio estático (proyecto `cementeriosanvicente1`, toma la rama `main`).
-- El tipo de cada zona (1 a 28), los plazos de mantenimiento y los umbrales de stock son provisorios hasta confirmarlos con el plano y la Dirección.
+- Las zonas 1 a 28 tienen solo fosas (no nichos); los nichos están en el Pabellón Amarillo.
+- Los plazos de mantenimiento y los umbrales de stock son provisorios hasta confirmarlos con el plano y la Dirección.
 - Nunca escribir contraseñas ni cadenas de conexión con contraseña en el repositorio.

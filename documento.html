@@ -145,7 +145,7 @@ offline, 72 h con marca offline) se rechaza o se genera alerta
 </thead>
 <tbody><tr>
 <td><code>zonas</code></td>
-<td>Zonas 1–28 + Pabellón Amarillo, Memorial y Osario. Tipo: <code>parque_fosas</code>, <code>nichos</code>, <code>mixta</code>, <code>especial</code>. Geometría.</td>
+<td>Zonas 1–28 (solo fosas) + Pabellón Amarillo (nichos), Memorial y Osario. Tipo: <code>parque_fosas</code>, <code>nichos</code>, <code>mixta</code>, <code>especial</code>. Geometría.</td>
 </tr>
 <tr>
 <td><code>puntos_referencia</code></td>
@@ -342,7 +342,7 @@ indicador de &quot;pendiente de envío&quot;.</li>
 <h2>6. Puesta en marcha</h2>
 <ol>
 <li>Crear base PostgreSQL 15+ con PostGIS (p. ej. Supabase) y ejecutar <code>esquema.sql</code>.</li>
-<li>Confirmar con el plano el <strong>tipo de cada zona</strong> (se cargan como <code>mixta</code>).</li>
+<li>Confirmar con el plano los límites de cada zona (las zonas 1–28 tienen solo fosas; los nichos, en el Pabellón Amarillo).</li>
 <li>Digitalizar geometrías de zonas y puntos de referencia.</li>
 <li>Cargar el padrón de nichos y fosas existente (CSV → <code>COPY</code>).</li>
 <li>Ajustar plazos de mantenimiento, temporada de lluvias y umbrales de stock.</li>

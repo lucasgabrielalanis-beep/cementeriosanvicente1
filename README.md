@@ -86,7 +86,7 @@ erDiagram
 
 | Tabla | Para qué |
 |---|---|
-| `zonas` | Zonas 1–28 + Pabellón Amarillo, Memorial y Osario. Tipo: `parque_fosas`, `nichos`, `mixta`, `especial`. Geometría. |
+| `zonas` | Zonas 1–28 (solo fosas) + Pabellón Amarillo (nichos), Memorial y Osario. Tipo: `parque_fosas`, `nichos`, `mixta`, `especial`. Geometría. |
 | `puntos_referencia` | Ingresos (Calle Soto y Calle Martin Cartechini), Administración, Cruz Mayor, Rotonda, Osario, Baños… para orientarse en campo. |
 | `espacios_sepultura` | Nichos (pabellón/nivel/columna) y fosas (sección/fila/número); tamaño `normal`/`extraordinario`; estado; `version` para concurrencia. |
 | `firmas_digitales` | Una por acción de campo: quién, cuándo (cliente + servidor), qué (hash), dónde (GPS), con qué dispositivo; encadenada por hash. **Inmutable.** |
@@ -266,7 +266,7 @@ Lo ven todos: directivos, capataces y operarios. Los ajustes de umbrales y plazo
 ## 6. Puesta en marcha
 
 1. Crear base PostgreSQL 15+ con PostGIS (p. ej. Supabase) y ejecutar `esquema.sql`.
-2. Confirmar con el plano el **tipo de cada zona** (se cargan como `mixta`).
+2. Confirmar con el plano los límites de cada zona (las zonas 1–28 tienen solo fosas; los nichos, en el Pabellón Amarillo).
 3. Digitalizar geometrías de zonas y puntos de referencia.
 4. Cargar el padrón de nichos y fosas existente (CSV → `COPY`).
 5. Ajustar plazos de mantenimiento, temporada de lluvias y umbrales de stock.
