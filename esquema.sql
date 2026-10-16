@@ -152,7 +152,7 @@ CREATE TABLE asignaciones_zona (
 CREATE INDEX idx_asig_zona_vigente ON asignaciones_zona(zona_id, usuario_id) WHERE hasta IS NULL;
 
 -- 4. Espacios de sepultura ----------------------------------------------------
--- Bloques de la Sección Vieja (nichos), según el plano: sector, cuadro (letra),
+-- Bloques de la Sección Vieja (sector de nichos), según el plano: sector, cuadro (letra),
 -- número de bloque y "Prop." tal como figura en el plano.
 CREATE TABLE bloques_seccion (
   id               SERIAL PRIMARY KEY,
@@ -799,7 +799,7 @@ INSERT INTO zonas (codigo, nombre, categoria, tipo, requiere_corte_cesped) VALUE
   ('PAB_AMARILLO',  'Pabellón Amarillo',      'pabellon_amarillo', 'nichos',       FALSE),
   ('CENTRAL',       'Central',                'central',           'nichos',       FALSE),
   ('LATERAL',       'Lateral',                'lateral',           'nichos',       FALSE),
-  ('SV_NICHOS',     'Sección Vieja (nichos)', 'seccion_vieja',     'nichos',       FALSE);
+  ('SV_NICHOS',     'Sección Vieja',          'seccion_vieja',     'nichos',       FALSE);
 
 INSERT INTO puntos_referencia (tipo, nombre, zona_id) VALUES
   ('acceso',           'Ingreso por Calle Soto',              NULL),
@@ -809,7 +809,7 @@ INSERT INTO puntos_referencia (tipo, nombre, zona_id) VALUES
   ('rotonda',          'Rotonda',                             NULL),
   ('banos',            'Baños',                               NULL);
 
--- Sección Vieja (nichos): calles, pasajes y referencias del plano.
+-- Sección Vieja (SV_NICHOS): calles, pasajes y referencias del plano.
 INSERT INTO puntos_referencia (tipo, nombre, zona_id, descripcion)
 SELECT t, n, (SELECT id FROM zonas WHERE codigo = 'SV_NICHOS'), d FROM (VALUES
   ('calle'::tipo_punto_ref,  'San Vicente',              'Eje central (vertical)'),
