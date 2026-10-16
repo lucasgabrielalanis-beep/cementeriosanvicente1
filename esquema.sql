@@ -162,13 +162,17 @@ CREATE TABLE espacios_sepultura (
   pabellon         TEXT,
   nivel            SMALLINT CHECK (nivel BETWEEN 1 AND 12),
   columna          SMALLINT CHECK (columna > 0),
-  -- Fosas: sección + fila + número
+  -- Fosas: en las zonas 1 a 30 se ubican por zona + cuadro (1 a 40) + fosa;
+  -- en las secciones, por sección + fila + número.
+  cuadro           SMALLINT CHECK (cuadro BETWEEN 1 AND 40),
   seccion          TEXT,
   fila             SMALLINT CHECK (fila > 0),
   numero           INTEGER CHECK (numero > 0),
   codigo           TEXT GENERATED ALWAYS AS (
                      CASE WHEN tipo_espacio = 'nicho'
                           THEN 'N-' || zona_id || '-' || coalesce(pabellon,'') || '-' || nivel || '-' || columna
+                          WHEN cuadro IS NOT NULL
+                          THEN 'F-' || zona_id || '-C' || cuadro || '-' || numero
                           ELSE 'F-' || zona_id || '-' || coalesce(seccion,'') || '-' || fila || '-' || numero END
                    ) STORED,
   geom             geometry(Point, 4326),
@@ -180,13 +184,14 @@ CREATE TABLE espacios_sepultura (
   CONSTRAINT nicho_ubicacion CHECK (
     tipo_espacio <> 'nicho' OR (nivel IS NOT NULL AND columna IS NOT NULL)),
   CONSTRAINT fosa_ubicacion CHECK (
-    tipo_espacio <> 'fosa' OR (fila IS NOT NULL AND numero IS NOT NULL)),
+    tipo_espacio <> 'fosa' OR (numero IS NOT NULL AND (cuadro IS NOT NULL OR fila IS NOT NULL))),
+  CONSTRAINT cuadro_solo_fosas CHECK (cuadro IS NULL OR tipo_espacio = 'fosa'),
   CONSTRAINT reserva_con_vencimiento CHECK (
     estado <> 'reservado' OR reservado_hasta IS NOT NULL),
   CONSTRAINT inhabilitado_con_motivo CHECK (
     estado <> 'inhabilitado' OR motivo_inhabilitacion IS NOT NULL),
   CONSTRAINT espacio_unico UNIQUE NULLS NOT DISTINCT
-    (zona_id, tipo_espacio, pabellon, nivel, columna, seccion, fila, numero)
+    (zona_id, tipo_espacio, pabellon, nivel, columna, cuadro, seccion, fila, numero)
 );
 -- Índice principal del filtro de disponibilidad y del resumen de stock
 CREATE INDEX idx_espacios_filtro ON espacios_sepultura (tipo_espacio, tipo_tamano, zona_id, estado);

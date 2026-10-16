@@ -196,3 +196,8 @@ label.btn { width: fit-content; }
 .espacios-libres { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
 .espacios-libres li { background: var(--soft); border-radius: 8px; padding: 4px 10px; font-size: .9rem; }
 .espacios-libres li.extra { background: var(--rojo-bg); color: var(--rojo); border: 1px solid currentColor; }
+
+.stock.clicable { cursor: pointer; transition: border-color .15s, transform .15s; }
+.stock.clicable:hover { border-color: var(--primary); }
+.stock.clicable:active { transform: scale(.99); }
+.ver-listado { margin-top: 10px; font-size: .9rem; font-weight: 600; color: var(--primary); }

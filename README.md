@@ -88,7 +88,7 @@ erDiagram
 |---|---|
 | `zonas` | Fosas: Parque (zonas 1–28), zonas COVID (29 y 30), Sección Vieja y Sección Nueva. Nichos: Pabellón Amarillo, Central, Lateral y Sección Vieja. Tipo: `parque_fosas`, `nichos`, `mixta`, `especial`. Geometría. |
 | `puntos_referencia` | Ingresos (Calle Soto y Calle Martin Cartechini), Administración, Cruz Mayor, Rotonda, Baños… para orientarse en campo. |
-| `espacios_sepultura` | Nichos (pabellón/nivel/columna) y fosas (sección/fila/número); tamaño `normal`/`extraordinario`; estado; `version` para concurrencia. |
+| `espacios_sepultura` | Nichos (pabellón/nivel/columna) y fosas (zonas 1–30: zona, cuadro 1–40 y fosa; secciones: sección/fila/número); tamaño `normal`/`extraordinario`; estado; `version` para concurrencia. |
 | `firmas_digitales` | Una por acción de campo: quién, cuándo (cliente + servidor), qué (hash), dónde (GPS), con qué dispositivo; encadenada por hash. **Inmutable.** |
 | `mantenimiento_tareas` | Corte de césped, limpieza de calles, relleno de fosas, pintura, etc. Fotos opcionales como constancia. No se puede marcar `completada` sin `ejecutada_por`, `completada_en` y `firma_id`. Cerrada = no editable. |
 | `operaciones_sepultura` | Inhumación (descarga en nicho/fosa), exhumación, reducción, traslados… **Inmutable**: se corrige con una operación `anulacion`. |

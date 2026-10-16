@@ -118,8 +118,7 @@ async function datosIniciales() {
 
   const usuarios = [
     { id: "u-dir", nombre: "Director (demo)", rol: "directivo", legajo: "D-001", pin: pinHash, zonas: [] },
-    { id: "u-cap-a", nombre: "Capataz A (demo)", rol: "capataz", legajo: "C-101", pin: pinHash, zonas: [...range(1, 14), 29, 31, 33, 34] },
-    { id: "u-cap-b", nombre: "Capataz B (demo)", rol: "capataz", legajo: "C-102", pin: pinHash, zonas: [...range(15, 28), 30, 32, 35, 36] },
+    { id: "u-cap-a", nombre: "Capataz A (demo)", rol: "capataz", legajo: "C-101", pin: pinHash, zonas: range(1, 36) },
   ];
   for (const z of zonas) z.responsable = usuarios.find((u) => u.rol === "capataz" && u.zonas.includes(z.id))?.id || null;
 
@@ -142,10 +141,10 @@ async function datosIniciales() {
       espacios.push({ id: idEsp++, zona: z.id, tipo, tam, estado });
     });
   }
-  numerarEspacios(espacios);
+  numerarEspacios(espacios, zonas);
 
   return {
-    version: 7,
+    version: 8,
     creado: new Date(ahora).toISOString(),
     usuarios, zonas, reglas,
     temporada: { desde: "11-01", hasta: "03-31", factor: 0.6 },
@@ -160,14 +159,21 @@ async function datosIniciales() {
     registros: [], dispositivos: {}, alertasVistas: {},
   };
 }
-// Número de cada nicho o fosa dentro de su zona (datos de ejemplo; con la base real viene del padrón).
-function numerarEspacios(espacios) {
+// Ubicación de cada nicho o fosa (datos de ejemplo; con la base real viene del padrón).
+// Zonas 1 a 30: zona → cuadro (1 a 40) → fosa. Resto: número dentro del sector.
+const MAX_CUADROS = 40;
+function numerarEspacios(espacios, zonas) {
+  const numerada = new Set(zonas.filter((z) => z.numero).map((z) => z.id));
   const grupos = {};
-  for (const e of espacios) (grupos[e.zona + "|" + e.tipo] ||= []).push(e);
+  for (const e of espacios) {
+    e.cuadro = e.tipo === "fosa" && numerada.has(e.zona) ? 1 + ((e.id * 7) % MAX_CUADROS) : undefined;
+    (grupos[[e.zona, e.tipo, e.cuadro ?? ""].join("|")] ||= []).push(e);
+  }
   for (const lista of Object.values(grupos)) {
     lista.sort((a, b) => a.id - b.id).forEach((e, i) => {
-      e.numero = 1 + i * 4 + (e.id % 4);
-      e.ub = e.tipo === "nicho" ? `Nicho N° ${e.numero} · Fila ${1 + ((e.numero - 1) % 5)}` : `Fosa N° ${e.numero}`;
+      e.numero = e.cuadro ? 1 + i * 3 + (e.id % 3) : 1 + i * 4 + (e.id % 4);
+      e.ub = e.tipo === "nicho" ? `Nicho N° ${e.numero} · Fila ${1 + ((e.numero - 1) % 5)}`
+        : e.cuadro ? `Cuadro ${e.cuadro} · Fosa ${e.numero}` : `Fosa N° ${e.numero}`;
     });
   }
 }
@@ -186,9 +192,19 @@ const Datos = {
       }
       this.estado.version = 6; this.guardar();
     }
-    if (this.estado?.version === 6) { // cada nicho y fosa pasa a tener su número dentro de la zona
-      numerarEspacios(this.estado.espacios);
-      this.estado.version = 7; this.guardar();
+    if (this.estado?.version === 6 || this.estado?.version === 7) { // ubicación: zona, cuadro y fosa
+      numerarEspacios(this.estado.espacios, this.estado.zonas);
+      this.estado.version = 8; this.guardar();
+    }
+    const capB = this.estado?.usuarios?.find((u) => u.id === "u-cap-b");
+    if (capB) { // queda un solo capataz para ingresar: hereda las zonas del Capataz B
+      const capA = this.estado.usuarios.find((u) => u.id === "u-cap-a");
+      if (capA) {
+        capA.zonas = [...new Set([...capA.zonas, ...capB.zonas])].sort((a, b) => a - b);
+        for (const z of this.estado.zonas) if (z.responsable === capB.id) z.responsable = capA.id;
+      }
+      this.estado.usuarios = this.estado.usuarios.filter((u) => u.id !== capB.id);
+      this.guardar();
     }
     if (this.estado?.usuarios?.some((u) => u.rol === "operario" || u.nombre === "Directivo (demo)")) {
       // Para ingresar quedan solo el director y los capataces.
@@ -196,7 +212,7 @@ const Datos = {
       for (const u of this.estado.usuarios) if (u.nombre === "Directivo (demo)") u.nombre = "Director (demo)";
       this.guardar();
     }
-    if (!this.estado || this.estado.version !== 7) { this.estado = await datosIniciales(); this.guardar(); }
+    if (!this.estado || this.estado.version !== 8) { this.estado = await datosIniciales(); this.guardar(); }
     return this.estado;
   },
   guardar(silencioso = false) {
@@ -480,7 +496,7 @@ function tarjetaStock(s) {
   const escala = Math.max(u.adv * 1.5, s.disponible, 1);
   const pct = Math.min(100, (s.disponible / escala) * 100);
   const color = s.nivel === "critica" ? "var(--rojo)" : s.nivel === "advertencia" ? "var(--amarillo-dot)" : "var(--verde)";
-  return `<div class="card stock">
+  return `<div class="card stock clicable" role="button" tabindex="0" data-ver-disp="${s.tipo}|${s.tam}" aria-label="Ver el listado de ${nombreStock(s.tipo, s.tam).toLowerCase()} disponibles">
     <div class="fila entre"><h3>${nombreStock(s.tipo, s.tam)}</h3>${chipNivel(s.nivel)}</div>
     <div class="numero">${fmtNum(s.disponible)}</div>
     <div class="muted chico">disponibles</div>
@@ -492,7 +508,7 @@ function tarjetaStock(s) {
     <div class="muted chico">Crítico ≤ ${u.crit} · Advertencia ≤ ${u.adv}</div>
     <div class="chico" style="margin-top:8px">${s.cobertura !== null ? `Cobertura estimada: <strong>~${fmtNum(s.cobertura)} días</strong> (${fmtNum(s.consumo, 1)} por día)` : "Sin consumo reciente"}</div>
     <div class="muted chico">Reservados ${s.reservado} · En mantenimiento ${s.en_mantenimiento} · Inhabilitados ${s.inhabilitado}</div>
-    ${s.disponible ? `<button type="button" class="enlace chico" style="margin-top:8px" data-ver-disp="${s.tipo}|${s.tam}">Ver dónde hay ${s.tipo === "nicho" ? "nichos" : "fosas"}${s.tam === "normal" ? "" : " extraordinari" + (s.tipo === "nicho" ? "os" : "as")} →</button>` : ""}
+    <div class="ver-listado">${s.disponible ? "Tocá para ver el listado →" : "No hay disponibles"}</div>
   </div>`;
 }
 
@@ -523,6 +539,30 @@ function seccionDondeHayLugar() {
       <label class="fila" style="font-weight:500;gap:6px;margin-left:4px"><input type="checkbox" data-filtro-extra ${f.extra ? "checked" : ""} style="width:22px;min-height:22px"> Solo extraordinarios</label></div>
     <p class="chico"><strong>${plural(libres.length, "lugar libre", "lugares libres")}</strong> en ${plural(bloques.length, "zona", "zonas")}.</p>
     <div class="lista-lugares">${bloques.join("") || '<div class="card vacio">No hay lugares libres con ese filtro.</div>'}</div>`;
+}
+
+// Listado (ventana) de los nichos o fosas disponibles de un tipo y tamaño.
+function abrirListado() {
+  const { tipo, tam, zona } = UI.listado;
+  const todos = Datos.estado.espacios.filter((e) => e.estado === "disponible" && e.tipo === tipo && e.tam === tam);
+  const zonasCon = [...new Set(todos.map((e) => e.zona))].sort((a, b) => a - b);
+  const lista = todos.filter((e) => !zona || e.zona === Number(zona))
+    .sort((a, b) => a.zona - b.zona || (a.cuadro ?? 0) - (b.cuadro ?? 0) || a.numero - b.numero);
+  const esFosa = tipo === "fosa";
+  const filas = lista.map((e) => `<tr>
+      <td>${esc(nombreZona(e.zona))}</td>
+      ${esFosa ? `<td>${e.cuadro ?? "—"}</td><td><strong>${e.numero}</strong></td>` : `<td><strong>${e.numero}</strong></td><td>${1 + ((e.numero - 1) % 5)}</td>`}
+      <td>${e.tam === "extraordinario" ? `<span class="chip critica">${nombreTamano(e)}</span>` : "Normal"}</td></tr>`).join("");
+  abrirModal(`<h2 style="margin-top:0">${nombreStock(tipo, tam)} disponibles</h2>
+    <p><strong>${lista.length}</strong> ${lista.length === 1 ? "lugar libre" : "lugares libres"}${zona ? " en " + esc(nombreZona(Number(zona))) : ` en ${zonasCon.length} ${zonasCon.length === 1 ? "zona" : "zonas"}`}.</p>
+    <label style="margin-bottom:12px">Zona<select data-listado-zona>
+      <option value="">Todas las zonas</option>
+      ${zonasCon.map((id) => `<option value="${id}" ${String(id) === String(zona) ? "selected" : ""}>${esc(nombreZona(id))} (${todos.filter((e) => e.zona === id).length})</option>`).join("")}
+    </select></label>
+    ${lista.length ? `<div class="tabla-scroll"><table>
+      <thead><tr><th>Zona</th>${esFosa ? "<th>Cuadro</th><th>Fosa</th>" : "<th>Nicho N°</th><th>Fila</th>"}<th>Tamaño</th></tr></thead>
+      <tbody>${filas}</tbody></table></div>` : '<div class="card vacio">No hay disponibles.</div>'}
+    <p style="margin-top:16px"><button class="btn sec" type="button" data-accion="cerrar">Cerrar</button></p>`);
 }
 
 function vistaResumen() {
@@ -784,7 +824,8 @@ function actualizarListaEspacios() {
   selZona.innerHTML = `<option value="">Todas las zonas (${disponibles.length})</option>` +
     Object.keys(porZona).map(Number).sort((a, b) => a - b).map((id) => `<option value="${id}" ${String(id) === String(f.zona) ? "selected" : ""}>${esc(nombreZona(id))} (${porZona[id]})</option>`).join("");
   if (f.zona && !porZona[f.zona]) f.zona = "";
-  const lista = disponibles.filter((e) => !f.zona || e.zona === Number(f.zona)).slice(0, 200);
+  const lista = disponibles.filter((e) => !f.zona || e.zona === Number(f.zona))
+    .sort((a, b) => a.zona - b.zona || (a.cuadro ?? 0) - (b.cuadro ?? 0) || a.numero - b.numero).slice(0, 200);
   form.elements.espacio.innerHTML = lista.length
     ? lista.map((e) => `<option value="${e.id}">${esc(nombreZona(e.zona))} · ${esc(e.ub)}</option>`).join("")
     : `<option value="">No hay ${nombreStock(f.tipo, f.tam).toLowerCase()} disponibles</option>`;
@@ -881,7 +922,7 @@ function trazoReducido(c) {
 
 /* ───────────────────────── Eventos ───────────────────────── */
 document.addEventListener("click", async (ev) => {
-  const el = ev.target.closest("button, [data-zona]");
+  const el = ev.target.closest("button, [data-zona], [data-ver-disp]");
   if (!el) { if (ev.target === $("#modal")) cerrarModal(); return; }
   const d = el.dataset;
   if (d.pestana) { UI.pestana = d.pestana; cerrarModal(); render(); $("#vista").focus({ preventScroll: true }); window.scrollTo(0, 0); return; }
@@ -891,9 +932,8 @@ document.addEventListener("click", async (ev) => {
   if (d.filtroDisp) { UI.filtroDisp.tipo = d.filtroDisp; render(); return; }
   if (d.verDisp) {
     const [tipo, tam] = d.verDisp.split("|");
-    UI.filtroDisp = { tipo, extra: tam === "extraordinario" };
-    render();
-    $("#donde-hay-lugar")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    UI.listado = { tipo, tam, zona: "" };
+    abrirListado();
     return;
   }
   if (d.quitarFoto) { UI.fotos.splice(Number(d.quitarFoto), 1); refrescarFotos(); return; }
@@ -945,6 +985,7 @@ document.addEventListener("change", async (ev) => {
     refrescarFotos();
     return;
   }
+  if (ev.target.matches("[data-listado-zona]")) { UI.listado.zona = ev.target.value; abrirListado(); return; }
   if (ev.target.matches("[data-filtro-extra]")) { UI.filtroDisp.extra = ev.target.checked; render(); return; }
   if (ev.target.matches("[data-filtro-zona]")) { UI.filtroDescarga.zona = ev.target.value; actualizarListaEspacios(); }
 });
@@ -1028,7 +1069,10 @@ document.addEventListener("submit", async (ev) => {
   }
 });
 
-document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#modal").hidden) { UI.firmaPendiente = null; cerrarModal(); } });
+document.addEventListener("keydown", (e) => {
+  if ((e.key === "Enter" || e.key === " ") && e.target.matches?.("[data-ver-disp]")) { e.preventDefault(); e.target.click(); return; }
+  if (e.key === "Escape" && !$("#modal").hidden) { UI.firmaPendiente = null; cerrarModal(); }
+});
 
 $("#reiniciar").addEventListener("click", async () => {
   if (!confirm("¿Borrar todos los registros de esta demostración y volver a los datos de ejemplo?")) return;
