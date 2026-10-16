@@ -29,6 +29,7 @@
   }
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0; background: var(--bg); color: var(--fg);
@@ -179,3 +180,11 @@ input:focus, select:focus, textarea:focus, button:focus-visible { outline: 3px s
 .vacio { text-align: center; padding: 24px; color: var(--muted); }
 .comprobante { text-align: center; }
 .comprobante .codigo { font-size: 1.6rem; letter-spacing: .1em; font-weight: 700; }
+
+/* Fotos del trabajo */
+.fotos { display: flex; flex-wrap: wrap; gap: 8px; }
+.fotos:empty { display: none; }
+.fotos img { width: 96px; height: 96px; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); display: block; }
+.foto { position: relative; }
+.foto button { position: absolute; top: -8px; right: -8px; width: 28px; height: 28px; border-radius: 50%; border: 0; background: var(--fg); color: var(--bg); cursor: pointer; font-size: .8rem; }
+label.btn { width: fit-content; }

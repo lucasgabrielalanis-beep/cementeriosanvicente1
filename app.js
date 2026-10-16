@@ -24,16 +24,21 @@ const ZONA_HORARIA = "America/Argentina/Cordoba";
 const PIN_DEMO = "1234";
 const DIA = 86400000;
 
+// Tareas que se pueden registrar hoy.
 const TAREAS = {
   corte_cesped: "Corte de césped",
-  desmalezado: "Desmalezado",
+  limpieza_calles: "Limpieza de calles",
   recoleccion_residuos: "Recolección de residuos",
-  desagues_pluviales: "Limpieza de desagües",
+  relleno_fosas: "Relleno de fosas",
+  pintura: "Pintura en general",
   poda: "Poda",
   limpieza_general: "Limpieza general",
   reparacion_nicho: "Reparación de nicho",
-  reparacion_caminos: "Reparación de caminos",
 };
+// Tareas que ya no se ofrecen, pero pueden figurar en registros firmados anteriores.
+const TAREAS_ANTERIORES = { desmalezado: "Desmalezado", desagues_pluviales: "Limpieza de desagües", reparacion_caminos: "Reparación de caminos" };
+const nombreTarea = (k) => TAREAS[k] || TAREAS_ANTERIORES[k] || k;
+const MAX_FOTOS = 3;
 const COLORES = { verde: "Verde", amarillo: "Amarillo", rojo_critico: "Rojo crítico" };
 const ORDEN_COLOR = { verde: 0, amarillo: 1, rojo_critico: 2 };
 const TIPOS_ZONA = { parque_fosas: "Fosas", nichos: "Nichos", mixta: "Mixta", especial: "Especial" };
@@ -98,9 +103,7 @@ async function datosIniciales() {
 
   const reglas = {
     corte_cesped: { verde: 15, rojo: 30, lluvia: true },
-    desmalezado: { verde: 30, rojo: 60, lluvia: true },
     recoleccion_residuos: { verde: 3, rojo: 7, lluvia: false },
-    desagues_pluviales: { verde: 30, rojo: 45, lluvia: true },
   };
 
   for (const z of zonas) {
@@ -145,7 +148,7 @@ async function datosIniciales() {
   }
 
   return {
-    version: 5,
+    version: 6,
     creado: new Date(ahora).toISOString(),
     usuarios, zonas, reglas,
     temporada: { desde: "11-01", hasta: "03-31", factor: 0.6 },
@@ -167,12 +170,22 @@ const Datos = {
   estado: null,
   async cargar() {
     try { this.estado = JSON.parse(localStorage.getItem(CLAVE_DATOS)); } catch { this.estado = null; }
-    if (!this.estado || this.estado.version !== 5) { this.estado = await datosIniciales(); this.guardar(); }
+    if (this.estado?.version === 5) { // se sacaron desmalezado y limpieza de desagües: dejan de contar en el semáforo
+      for (const k of Object.keys(TAREAS_ANTERIORES)) {
+        delete this.estado.reglas[k];
+        for (const z of this.estado.zonas) delete z.ultimas[k];
+      }
+      this.estado.version = 6; this.guardar();
+    }
+    if (!this.estado || this.estado.version !== 6) { this.estado = await datosIniciales(); this.guardar(); }
     return this.estado;
   },
-  guardar() {
-    try { localStorage.setItem(CLAVE_DATOS, JSON.stringify(this.estado)); }
-    catch { avisar("No se pudo guardar en este dispositivo (memoria llena o modo privado)."); }
+  guardar(silencioso = false) {
+    try { localStorage.setItem(CLAVE_DATOS, JSON.stringify(this.estado)); return true; }
+    catch {
+      if (!silencioso) avisar("No se pudo guardar en este dispositivo (memoria llena o modo privado).");
+      return false;
+    }
   },
   async reiniciar() {
     try { localStorage.removeItem(CLAVE_DATOS); } catch { /* sin almacenamiento */ }
@@ -244,7 +257,7 @@ function alertasActuales() {
     lista.push({
       clave: "mant:" + z.id, nivel: sem.color === "rojo_critico" ? "critica" : "advertencia", tipo: "mantenimiento", zona: z.id,
       titulo: (sem.color === "rojo_critico" ? "Mantenimiento crítico en " : "Mantenimiento por vencer en ") + z.nombre,
-      detalle: `${TAREAS[t.tarea]}: ${t.dias === null ? "sin registro" : "hace " + fmtNum(t.dias) + " días"} (límite ${fmtNum(t.limR)} días)`,
+      detalle: `${nombreTarea(t.tarea)}: ${t.dias === null ? "sin registro" : "hace " + fmtNum(t.dias) + " días"} (límite ${fmtNum(t.limR)} días)`,
     });
   }
   return lista.sort((a, b) => (a.nivel === b.nivel ? 0 : a.nivel === "critica" ? -1 : 1));
@@ -300,9 +313,11 @@ async function verificarFirmaEcdsa(publicaJwk, mensaje, firmaB64) {
   return crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, clave, desdeB64(firmaB64), new TextEncoder().encode(mensaje));
 }
 
-async function firmarYRegistrar(usuario, accion, datos, pin, trazoDataUrl, gps) {
+async function firmarYRegistrar(usuario, accion, datos, pin, trazoDataUrl, gps, fotos = []) {
   if (await sha256("pin:" + pin) !== usuario.pin) throw new Error("El PIN no es correcto.");
   const disp = await Dispositivo.obtener();
+  // Las fotos quedan atadas a la firma por su huella: si alguien cambia una foto, la verificación lo detecta.
+  if (fotos.length) datos = { ...datos, fotos_sha256: await Promise.all(fotos.map(sha256)) };
   const payload = {
     accion, datos,
     usuario: { id: usuario.id, nombre: usuario.nombre, legajo: usuario.legajo, rol: usuario.rol },
@@ -320,10 +335,11 @@ async function firmarYRegistrar(usuario, accion, datos, pin, trazoDataUrl, gps) 
   const registrado_en = new Date().toISOString();
   const registro = {
     secuencia: registros.length + 1, payload, payload_sha256: payloadSha, firma_base64: firma,
-    trazo: trazoDataUrl, hash_anterior: anterior, registrado_en,
+    trazo: trazoDataUrl, fotos: fotos.length ? fotos : undefined, hash_anterior: anterior, registrado_en,
   };
   registro.hash_registro = await sha256([anterior, payloadSha, firma, registrado_en].join("|"));
 
+  const respaldo = JSON.stringify(Datos.estado);
   // Efectos sobre el estado operativo
   if (accion === "tarea") {
     const z = Datos.estado.zonas.find((x) => x.id === datos.zona);
@@ -334,7 +350,10 @@ async function firmarYRegistrar(usuario, accion, datos, pin, trazoDataUrl, gps) 
     e.estado = "ocupado";
   }
   registros.push(registro);
-  Datos.guardar();
+  if (!Datos.guardar(true)) {
+    Datos.estado = JSON.parse(respaldo);
+    throw new Error("No queda lugar en este dispositivo para guardar el registro. Probá con menos fotos.");
+  }
   return registro;
 }
 
@@ -348,6 +367,9 @@ async function verificarCadena() {
     if (r.hash_anterior !== anterior) problemas.push("la cadena está cortada");
     if (await sha256([r.hash_anterior, r.payload_sha256, r.firma_base64, r.registrado_en].join("|")) !== r.hash_registro) problemas.push("el sello del registro no coincide");
     if (await sha256(r.trazo) !== r.payload.trazo_sha256) problemas.push("el trazo de firma fue cambiado");
+    const huellas = r.payload.datos.fotos_sha256 || [];
+    const fotos = r.fotos || [];
+    if (huellas.length !== fotos.length || (await Promise.all(fotos.map(sha256))).some((h, i) => h !== huellas[i])) problemas.push("las fotos fueron cambiadas");
     const disp = dispositivos[r.payload.dispositivo_id];
     if (!disp) problemas.push("dispositivo desconocido");
     else if (!(await verificarFirmaEcdsa(disp.publicaJwk, r.payload_sha256, r.firma_base64).catch(() => false))) problemas.push("la firma digital no verifica");
@@ -358,7 +380,7 @@ async function verificarCadena() {
 }
 
 /* ───────────────────────── Interfaz: infraestructura ───────────────────────── */
-const UI = { usuario: null, pestana: null, filtroColor: "todas", borrador: null };
+const UI = { usuario: null, pestana: null, filtroColor: "todas", borrador: null, fotos: [] };
 
 function avisar(texto) {
   const t = $("#toast");
@@ -480,7 +502,7 @@ function vistaResumen() {
 
 function tileZona(z, s) {
   const t = s.tareas[0];
-  const pie = t ? (t.dias === null ? "Sin registro" : `${TAREAS[t.tarea].split(" ")[0]}: hace ${fmtNum(t.dias)} d`) : "Sin tareas";
+  const pie = t ? (t.dias === null ? "Sin registro" : `${nombreTarea(t.tarea).split(" ")[0]}: hace ${fmtNum(t.dias)} d`) : "Sin tareas";
   return `<button type="button" class="zona c-${s.color}" data-zona="${z.id}" aria-label="${esc(z.nombre)}: ${COLORES[s.color]}">
     <strong>${z.numero ? z.numero : esc(z.nombre)}</strong>
     ${z.covid ? "<span>COVID</span>" : z.numero ? "" : `<span>${TIPOS_ZONA[z.tipo]}</span>`}
@@ -517,7 +539,7 @@ function detalleZona(id) {
     <p class="muted">${TIPOS_ZONA[z.tipo]} · Responsable: ${resp ? esc(resp.nombre) : "sin asignar"}</p>
     <div class="tabla-scroll"><table>
       <thead><tr><th>Tarea</th><th>Última vez</th><th>Hace</th><th>Límite</th><th>Estado</th></tr></thead>
-      <tbody>${s.tareas.map((t) => `<tr><td>${TAREAS[t.tarea]}</td><td>${fmtDia(t.ultima)}</td><td>${t.dias === null ? "—" : fmtNum(t.dias) + " d"}</td><td>${fmtNum(t.limV)} / ${fmtNum(t.limR)} d</td><td>${chipColor(t.color)}</td></tr>`).join("") || '<tr><td colspan="5">Sin tareas con plazo.</td></tr>'}</tbody>
+      <tbody>${s.tareas.map((t) => `<tr><td>${nombreTarea(t.tarea)}</td><td>${fmtDia(t.ultima)}</td><td>${t.dias === null ? "—" : fmtNum(t.dias) + " d"}</td><td>${fmtNum(t.limV)} / ${fmtNum(t.limR)} d</td><td>${chipColor(t.color)}</td></tr>`).join("") || '<tr><td colspan="5">Sin tareas con plazo.</td></tr>'}</tbody>
     </table></div>
     <h3 style="margin-top:16px">Últimos registros en la zona</h3>
     ${regs.length ? tablaRegistros(regs) : '<p class="muted">Sin registros firmados todavía.</p>'}
@@ -543,7 +565,7 @@ function vistaAlertas() {
 
 function descripcionRegistro(r) {
   const d = r.payload.datos;
-  if (r.payload.accion === "tarea") return `${TAREAS[d.tipo_tarea]} en ${esc(nombreZona(d.zona))} (${d.porcentaje}%)`;
+  if (r.payload.accion === "tarea") return `${nombreTarea(d.tipo_tarea)} en ${esc(nombreZona(d.zona))} (${d.porcentaje}%)${d.fotos_sha256?.length ? ` · ${d.fotos_sha256.length} ${d.fotos_sha256.length === 1 ? "foto" : "fotos"}` : ""}`;
   return `Descarga en ${d.tipo} ${d.tam} — ${esc(d.ubicacion)} (${esc(nombreZona(d.zona))}) · ${esc(d.difunto.nombre)}`;
 }
 const nombreZona = (id) => Datos.estado.zonas.find((z) => z.id === id)?.nombre || "—";
@@ -588,6 +610,7 @@ function detalleRegistro(sec) {
       <dt>Sello anterior</dt><dd class="mono">${r.hash_anterior}</dd>
       <dt>Sello del registro</dt><dd class="mono">${r.hash_registro}</dd>
     </dl></div>
+    ${r.fotos?.length ? `<h3 style="margin-top:16px">Fotos del trabajo</h3><div class="fotos">${r.fotos.map((src, i) => `<a href="${src}" target="_blank" rel="noopener"><img src="${src}" alt="Foto ${i + 1} del trabajo"></a>`).join("")}</div>` : ""}
     <h3 style="margin-top:16px">Trazo de firma</h3>
     <img src="${r.trazo}" alt="Trazo de firma" style="width:100%;max-width:420px;border:1px solid var(--line);border-radius:10px;background:#fff">
     <p style="margin-top:16px"><button class="btn sec" type="button" data-accion="cerrar">Cerrar</button></p>`);
@@ -609,10 +632,10 @@ function vistaAjustes() {
     <h2>Plazos de mantenimiento</h2>
     <div class="tabla-scroll"><table>
       <thead><tr><th>Tarea</th><th>Verde hasta (días)</th><th>Rojo después de (días)</th><th>Se acorta con lluvia</th></tr></thead>
-      <tbody>${Object.entries(e.reglas).map(([k, r]) => `<tr><td>${TAREAS[k]}</td>
-        <td><input type="number" min="1" name="verde:${k}" value="${r.verde}" aria-label="Verde ${TAREAS[k]}"></td>
-        <td><input type="number" min="2" name="rojo:${k}" value="${r.rojo}" aria-label="Rojo ${TAREAS[k]}"></td>
-        <td><input type="checkbox" name="lluvia:${k}" ${r.lluvia ? "checked" : ""} style="width:24px;min-height:24px" aria-label="Lluvia ${TAREAS[k]}"></td></tr>`).join("")}</tbody>
+      <tbody>${Object.entries(e.reglas).map(([k, r]) => `<tr><td>${nombreTarea(k)}</td>
+        <td><input type="number" min="1" name="verde:${k}" value="${r.verde}" aria-label="Verde ${nombreTarea(k)}"></td>
+        <td><input type="number" min="2" name="rojo:${k}" value="${r.rojo}" aria-label="Rojo ${nombreTarea(k)}"></td>
+        <td><input type="checkbox" name="lluvia:${k}" ${r.lluvia ? "checked" : ""} style="width:24px;min-height:24px" aria-label="Lluvia ${nombreTarea(k)}"></td></tr>`).join("")}</tbody>
     </table></div>
     <h2>Temporada de lluvias</h2>
     <div class="dos-col" style="max-width:560px">
@@ -661,6 +684,13 @@ function vistaTarea() {
       </fieldset>
       <label>¿Cuánto de la zona se cubrió?<select name="porcentaje">${[100, 75, 50, 25].map((p) => `<option value="${p}" ${p === b.porcentaje ? "selected" : ""}>${p}%</option>`).join("")}</select></label>
       <label>Observaciones <span class="muted">(opcional)</span><textarea name="observaciones" maxlength="600">${esc(b.observaciones)}</textarea></label>
+      <div>
+        <strong>Fotos del trabajo</strong> <span class="muted">(opcional, hasta ${MAX_FOTOS})</span>
+        <p class="muted chico" style="margin:2px 0 8px">Sirven como constancia de que el trabajo se hizo. Quedan firmadas junto con el registro.</p>
+        <div class="fotos" id="fotos-previa">${previaFotos()}</div>
+        <label class="btn sec" style="margin-top:8px" ${UI.fotos.length >= MAX_FOTOS ? "hidden" : ""} id="agregar-foto">📷 Agregar foto
+          <input type="file" accept="image/*" multiple data-fotos hidden></label>
+      </div>
       <button class="btn grande" type="submit">Continuar a la firma</button>
     </form>`;
 }
@@ -715,6 +745,34 @@ function vistaMisRegistros() {
   return `<h1>Mis registros</h1>
     <p class="muted">Lo que firmaste desde la app. Tocá el código para ver el comprobante.</p>
     ${regs.length ? tablaRegistros(regs) : '<div class="card vacio">Todavía no registraste nada.</div>'}`;
+}
+
+/* ───────────────────────── Fotos del trabajo ───────────────────────── */
+function previaFotos() {
+  return UI.fotos.map((src, i) => `<div class="foto"><img src="${src}" alt="Foto ${i + 1}"><button type="button" data-quitar-foto="${i}" aria-label="Quitar foto ${i + 1}">✕</button></div>`).join("");
+}
+function refrescarFotos() {
+  const previa = $("#fotos-previa");
+  if (previa) previa.innerHTML = previaFotos();
+  const boton = $("#agregar-foto");
+  if (boton) boton.hidden = UI.fotos.length >= MAX_FOTOS;
+}
+// Achica la foto (lado mayor 900 px, JPEG) para que entre en el celular y se suba rápido.
+function achicarFoto(archivo) {
+  return new Promise((ok, mal) => {
+    const url = URL.createObjectURL(archivo);
+    const img = new Image();
+    img.onload = () => {
+      const escala = Math.min(1, 900 / Math.max(img.width, img.height));
+      const c = document.createElement("canvas");
+      c.width = Math.round(img.width * escala); c.height = Math.round(img.height * escala);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      ok(c.toDataURL("image/jpeg", 0.6));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); mal(new Error("No se pudo leer la imagen.")); };
+    img.src = url;
+  });
 }
 
 /* ───────────────────────── Firma (modal) ───────────────────────── */
@@ -780,6 +838,7 @@ document.addEventListener("click", async (ev) => {
   if (d.zona) { detalleZona(Number(d.zona)); return; }
   if (d.registro) { detalleRegistro(Number(d.registro)); return; }
   if (d.filtro) { UI.filtroColor = d.filtro; render(); return; }
+  if (d.quitarFoto) { UI.fotos.splice(Number(d.quitarFoto), 1); refrescarFotos(); return; }
   if (d.vista) {
     const i = d.vista.lastIndexOf("|");
     Datos.estado.alertasVistas[d.vista.slice(0, i)] = d.vista.slice(i + 1);
@@ -798,7 +857,7 @@ document.addEventListener("click", async (ev) => {
   }
   switch (d.accion) {
     case "salir":
-      UI.usuario = null; UI.borrador = null;
+      UI.usuario = null; UI.borrador = null; UI.fotos = [];
       try { localStorage.removeItem(CLAVE_SESION); } catch { /* sin almacenamiento */ }
       render(); break;
     case "cerrar": UI.firmaPendiente = null; cerrarModal(); break;
@@ -809,14 +868,25 @@ document.addEventListener("click", async (ev) => {
       const malos = res.filter((r) => !r.ok);
       $("#resultado-verificacion").innerHTML = malos.length
         ? `<div class="banner critica"><div><strong>${malos.length === 1 ? "Se detectó 1 registro alterado" : `Se detectaron ${malos.length} registros alterados`}</strong><ul>${malos.map((m) => `<li>N° ${m.secuencia}: ${m.problemas.join(", ")}</li>`).join("")}</ul></div></div>`
-        : `<div class="banner" style="background:var(--verde-bg);color:var(--verde);border:1px solid currentColor"><div><strong>Todo en orden</strong>Los ${res.length} registros están completos, encadenados y con firma válida.</div></div>`;
+        : `<div class="banner" style="background:var(--verde-bg);color:var(--verde);border:1px solid currentColor"><div><strong>Todo en orden</strong>${res.length === 1 ? "El registro está completo y con firma válida." : `Los ${res.length} registros están completos, encadenados y con firma válida.`}</div></div>`;
       el.disabled = false; el.textContent = "Verificar integridad";
       break;
     }
   }
 });
 
-document.addEventListener("change", (ev) => {
+document.addEventListener("change", async (ev) => {
+  if (ev.target.matches("[data-fotos]")) {
+    const elegidos = [...ev.target.files];
+    const archivos = elegidos.slice(0, MAX_FOTOS - UI.fotos.length);
+    ev.target.value = "";
+    for (const a of archivos) {
+      try { UI.fotos.push(await achicarFoto(a)); } catch (e) { avisar(e.message); }
+    }
+    if (elegidos.length > archivos.length) avisar(`Se pueden adjuntar hasta ${MAX_FOTOS} fotos.`);
+    refrescarFotos();
+    return;
+  }
   if (ev.target.matches("[data-filtro-zona]")) { UI.filtroDescarga.zona = ev.target.value; actualizarListaEspacios(); }
 });
 
@@ -838,7 +908,8 @@ document.addEventListener("submit", async (ev) => {
         porcentaje: Number(f.porcentaje.value), observaciones: f.observaciones.value.trim() || undefined,
       };
       UI.borrador = { accion: "tarea", ...datos, observaciones: datos.observaciones || "" };
-      abrirFirma("tarea", datos, `<dt>Tarea</dt><dd>${TAREAS[datos.tipo_tarea]} (${datos.porcentaje}%)</dd><dt>Zona</dt><dd>${esc(nombreZona(datos.zona))}</dd>${datos.observaciones ? `<dt>Obs.</dt><dd>${esc(datos.observaciones)}</dd>` : ""}`);
+      abrirFirma("tarea", datos, `<dt>Tarea</dt><dd>${nombreTarea(datos.tipo_tarea)} (${datos.porcentaje}%)</dd><dt>Zona</dt><dd>${esc(nombreZona(datos.zona))}</dd>${datos.observaciones ? `<dt>Obs.</dt><dd>${esc(datos.observaciones)}</dd>` : ""}${UI.fotos.length ? `<dt>Fotos</dt><dd>${UI.fotos.length}</dd>` : ""}`);
+      UI.firmaPendiente.fotos = UI.fotos.slice();
     } else if (tipoForm === "descarga") {
       const esp = Datos.estado.espacios.find((e) => e.id === Number(f.espacio.value));
       if (!esp) { avisar("Elegí un espacio disponible."); return; }
@@ -854,11 +925,12 @@ document.addEventListener("submit", async (ev) => {
       if (!c.trazos) { avisar("Falta tu firma en el recuadro."); return; }
       const boton = form.querySelector('button[type="submit"]');
       boton.disabled = true; boton.textContent = "Firmando…";
-      const { accion, datos, gps } = UI.firmaPendiente;
+      const { accion, datos, gps, fotos = [] } = UI.firmaPendiente;
       let reg;
-      try { reg = await firmarYRegistrar(UI.usuario, accion, datos, f.pin.value, trazoReducido(c), gps); }
+      try { reg = await firmarYRegistrar(UI.usuario, accion, datos, f.pin.value, trazoReducido(c), gps, fotos); }
       catch (e) { boton.disabled = false; boton.textContent = "Firmar y registrar"; avisar(e.message); return; }
       UI.firmaPendiente = null; UI.borrador = null;
+      if (accion === "tarea") UI.fotos = [];
       render();
       abrirModal(`<div class="comprobante">
         <h2 style="margin-top:0">Registrado ✔</h2>
@@ -882,7 +954,7 @@ document.addEventListener("submit", async (ev) => {
       const nuevasR = {};
       for (const k of Object.keys(e.reglas)) {
         const verde = Number(f["verde:" + k].value), rojo = Number(f["rojo:" + k].value);
-        if (!(verde > 0 && rojo > verde)) { avisar(`${TAREAS[k]}: el plazo rojo tiene que ser mayor que el verde.`); return; }
+        if (!(verde > 0 && rojo > verde)) { avisar(`${nombreTarea(k)}: el plazo rojo tiene que ser mayor que el verde.`); return; }
         nuevasR[k] = { verde, rojo, lluvia: f["lluvia:" + k].checked };
       }
       const factor = Number(f["t-factor"].value);
@@ -902,7 +974,7 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#mod
 $("#reiniciar").addEventListener("click", async () => {
   if (!confirm("¿Borrar todos los registros de esta demostración y volver a los datos de ejemplo?")) return;
   await Datos.reiniciar();
-  UI.usuario = null; UI.borrador = null;
+  UI.usuario = null; UI.borrador = null; UI.fotos = [];
   try { localStorage.removeItem(CLAVE_SESION); } catch { /* sin almacenamiento */ }
   cerrarModal(); render(); avisar("Demostración reiniciada.");
 });
