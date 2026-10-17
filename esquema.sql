@@ -364,7 +364,7 @@ CREATE TABLE operaciones_sepultura (
   espacio_id       BIGINT NOT NULL REFERENCES espacios_sepultura(id),
   espacio_destino_id BIGINT REFERENCES espacios_sepultura(id),  -- traslados
   difunto_id       UUID REFERENCES difuntos(id),
-  expediente       TEXT,                               -- nro. de expediente / orden municipal
+  expediente       TEXT,                               -- nro. de planilla (antes: expediente / orden)
   -- Trazabilidad obligatoria:
   ejecutada_por    UUID NOT NULL REFERENCES usuarios(id),
   supervisada_por  UUID REFERENCES usuarios(id),
