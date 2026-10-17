@@ -22,7 +22,7 @@ const CLAVE_DATOS = "cementerio-sv-demo-v5";
 const CLAVE_SESION = "cementerio-sv-sesion";
 // Versión publicada. Tiene que coincidir con version.json: si el servidor tiene una más nueva,
 // la app avisa para recargar (así nadie usa una versión vieja guardada en el celular).
-const VERSION_APP = "2026-10-17.2";
+const VERSION_APP = "2026-10-17.3";
 const ZONA_HORARIA = "America/Argentina/Cordoba";
 const PIN_DEMO = "1234";
 const DIA = 86400000;
@@ -171,9 +171,10 @@ const MAX_FILAS = 10;
 // exhumación): el lugar queda libre y vuelve a contar como disponible. La INHUMACIÓN lo ocupa.
 // (Los registros viejos con acción "descarga" eran inhumaciones: se muestran como tales.)
 const OPERACIONES = {
-  descarga: { titulo: "Registrar descarga", accion: "descarga_libera", libera: true, nombre: "Descarga" },
-  exhumacion: { titulo: "Registrar exhumación", accion: "exhumacion", libera: true, nombre: "Exhumación" },
-  inhumacion: { titulo: "Registrar inhumación", accion: "inhumacion", libera: false, nombre: "Inhumación" },
+  // Pedido del dueño: la descarga es solo de nichos y la exhumación solo de fosas.
+  descarga: { titulo: "Registrar descarga", accion: "descarga_libera", libera: true, nombre: "Descarga", tipos: ["nicho"] },
+  exhumacion: { titulo: "Registrar exhumación", accion: "exhumacion", libera: true, nombre: "Exhumación", tipos: ["fosa"] },
+  inhumacion: { titulo: "Registrar inhumación", accion: "inhumacion", libera: false, nombre: "Inhumación", tipos: ["nicho", "fosa"] },
 };
 const ACCIONES_LIBERAN = ["descarga_libera", "exhumacion"];
 const ACCIONES_OCUPAN = ["inhumacion", "descarga"];
@@ -1133,15 +1134,19 @@ function vistaInhumacion() { return vistaOperacion("inhumacion"); }
 // Inhumación: el lugar pasa a ocupado. Mismo formulario de ubicación: zona + planta/cuadro/bloque + fila + número.
 function vistaOperacion(modo) {
   const exh = OPERACIONES[modo].libera;
-  const b = UI.borrador?.accion === modo ? UI.borrador : { tipo: "nicho", tam: "normal", zona: "" };
+  const tipos = OPERACIONES[modo].tipos;
+  const b = UI.borrador?.accion === modo ? { ...UI.borrador } : { tipo: tipos[0], tam: "normal", zona: "" };
+  if (!tipos.includes(b.tipo)) b.tipo = tipos[0];
+  const queLugar = tipos.length === 2 ? "el nicho o la fosa" : tipos[0] === "nicho" ? "el nicho" : "la fosa";
   UI.filtroDescarga = { tipo: b.tipo, tam: b.tam, zona: b.zona, planta: "", lugar: "", cuadro: "", fila: "" };
   const op = (campo, valor, txt) => `<button type="button" class="opcion" data-elegir="${campo}" data-valor="${valor}" aria-pressed="${b[campo] === valor}">${txt}</button>`;
   return `<h1>${OPERACIONES[modo].titulo}</h1>
-    <p class="muted">${exh ? "Al firmar, el nicho o la fosa queda <strong>libre</strong> y vuelve a contarse como disponible en el Resumen." : "El nicho o la fosa pasa a <strong>ocupado</strong> y se descuenta de los disponibles."}</p>
+    <p class="muted">${exh ? `Al firmar, ${queLugar} queda <strong>libre</strong> y vuelve a contarse como disponible en el Resumen.` : "El nicho o la fosa pasa a <strong>ocupado</strong> y se descuenta de los disponibles."}
+      ${tipos.length === 1 ? `<br><strong>Solo ${tipos[0] === "nicho" ? "nichos: aparecen únicamente los sectores con nichos" : "fosas: aparecen únicamente las zonas y secciones con fosas"}.</strong>` : ""}</p>
     <form class="form" data-form="${modo}">
       <div class="dos-col">
         <fieldset style="border:0;padding:0;margin:0"><legend style="font-weight:600;margin-bottom:6px">Tipo</legend>
-          <div class="opciones">${op("tipo", "nicho", "Nicho")}${op("tipo", "fosa", "Fosa")}</div></fieldset>
+          <div class="opciones">${tipos.length === 2 ? op("tipo", "nicho", "Nicho") + op("tipo", "fosa", "Fosa") : `<span class="opcion" aria-pressed="true" style="cursor:default">${tipos[0] === "nicho" ? "Nicho" : "Fosa"}</span>`}</div></fieldset>
         <fieldset style="border:0;padding:0;margin:0"><legend style="font-weight:600;margin-bottom:6px">Tamaño</legend>
           <div class="opciones">${op("tam", "normal", "Normal")}${op("tam", "extraordinario", "Extraordinario")}</div></fieldset>
       </div>
@@ -1449,6 +1454,7 @@ document.addEventListener("submit", async (ev) => {
       UI.firmaPendiente.fotos = UI.fotos.slice();
     } else if (OPERACIONES[tipoForm]) {
       const exh = OPERACIONES[tipoForm].libera;
+      if (!OPERACIONES[tipoForm].tipos.includes(f.tipo.value)) { avisar(`${OPERACIONES[tipoForm].nombre}: solo ${OPERACIONES[tipoForm].tipos.map((t) => t + "s").join(" o ")}.`); return; }
       let esp, altaManual = false;
       const fd = UI.filtroDescarga;
       const zona = Datos.estado.zonas.find((z) => z.id === Number(fd.zona));
