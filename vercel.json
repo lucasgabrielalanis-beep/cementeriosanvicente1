@@ -1,5 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "git": {
+    "deploymentEnabled": {
+      "claude/dazzling-lovelace-mmnijz": false
+    }
+  },
   "headers": [
     {
       "source": "/(.*)",
