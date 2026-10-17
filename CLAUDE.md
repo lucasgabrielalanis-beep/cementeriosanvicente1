@@ -13,6 +13,6 @@
   - `openapi.yaml`: contratos de la API.
   - `README.md`: arquitectura, alertas y diagramas (Mermaid).
   - `documento.html`: el README como página (generada, no editar a mano). Después de cambiar el README: `cd herramientas && npm install && npm run pagina`. Mermaid va en `vendor/`.
-- Se publica en Vercel como sitio estático (proyecto `cementeriosanvicente1`, toma la rama `main`). **En cada cambio publicado subir la versión** en `VERSION_APP` (app.js), `version.json` y los `?v=` de index.html (deben coincidir): la app compara con `version.json` y muestra "Hay una versión nueva — Actualizar ahora". `vercel.json` manda `no-cache`.
+- Se publica en Vercel como sitio estático (proyecto `cementeriosanvicente1`, toma la rama `main`). **En cada cambio publicado subir la versión** en `VERSION_APP` (app.js), `version.json` y los `?v=` de index.html (deben coincidir): la app compara con `version.json` y muestra "Hay una versión nueva — Actualizar ahora". `vercel.json` manda `no-cache` y **no publica la rama de trabajo** (`claude/dazzling-lovelace-mmnijz`): solo `main`, para no agotar el límite diario de publicaciones del plan gratuito de Vercel (ya pasó una vez: "Deployment rate limited — retry in 24 hours").
 - Los plazos de mantenimiento y los umbrales de stock son provisorios hasta confirmarlos con el plano y la Dirección.
 - Nunca escribir contraseñas ni cadenas de conexión con contraseña en el repositorio.
