@@ -207,3 +207,16 @@ label.btn { width: fit-content; }
 .aviso-version { position: sticky; top: 0; z-index: 70; background: var(--amarillo-bg); color: var(--fg); border-bottom: 2px solid var(--amarillo-dot); padding: 10px 16px; display: flex; gap: 12px; align-items: center; justify-content: center; flex-wrap: wrap; font-weight: 600; }
 .aviso-version .btn { min-height: 40px; padding: 6px 14px; }
 .liberado { border-left: 6px solid var(--verde); }
+
+/* Informe diario */
+.kpis { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+.kpi .numero { font-size: 1.8rem; font-weight: 700; line-height: 1.1; }
+.kpi.ok .numero { color: var(--verde); }
+.dia-actual td { background: var(--soft); font-weight: 600; }
+.informe-cabecera { align-items: flex-end; }
+@media print {
+  .barra, .aviso-demo, .pestanas, .pie, .no-imprimir, .aviso-version, .toast { display: none !important; }
+  body { background: #fff; color: #000; }
+  .vista { max-width: none; padding: 0; }
+  .card, .tabla-scroll { box-shadow: none; break-inside: avoid; }
+}

@@ -22,7 +22,7 @@ const CLAVE_DATOS = "cementerio-sv-demo-v5";
 const CLAVE_SESION = "cementerio-sv-sesion";
 // Versión publicada. Tiene que coincidir con version.json: si el servidor tiene una más nueva,
 // la app avisa para recargar (así nadie usa una versión vieja guardada en el celular).
-const VERSION_APP = "2026-10-16.1";
+const VERSION_APP = "2026-10-17.1";
 const ZONA_HORARIA = "America/Argentina/Cordoba";
 const PIN_DEMO = "1234";
 const DIA = 86400000;
@@ -496,7 +496,8 @@ function cerrarModal() {
 }
 
 const PESTANAS = {
-  directivo: [["resumen", "Resumen"], ["zonas", "Zonas"], ["alertas", "Alertas"], ["registro", "Registro firmado"], ["ajustes", "Ajustes"]],
+  // El informe diario lo ve solo el Director.
+  directivo: [["resumen", "Resumen"], ["informe", "Informe diario"], ["zonas", "Zonas"], ["alertas", "Alertas"], ["registro", "Registro firmado"], ["ajustes", "Ajustes"]],
   // Los tableros (resumen, zonas, alertas, registro) los ven todos; los ajustes, solo directivos.
   // Capataces y operarios arrancan en el mismo Resumen que los directivos.
   campo: [["resumen", "Resumen"], ["zonas", "Zonas"], ["alertas", "Alertas"], ["registro", "Registro firmado"], ["mis-zonas", "Mis zonas"], ["tarea", "Registrar tarea"], ["descarga", "Registrar descarga"], ["exhumacion", "Registrar exhumación"], ["inhumacion", "Registrar inhumación"], ["mis-registros", "Mis registros"]],
@@ -515,7 +516,7 @@ function render() {
   const activa = $("#pestanas [aria-current]");
   $("#pestanas").scrollLeft = activa ? Math.max(0, activa.offsetLeft - 16) : 0;
   const vistas = {
-    resumen: vistaResumen, zonas: vistaZonas, alertas: vistaAlertas, registro: vistaRegistro, ajustes: vistaAjustes,
+    resumen: vistaResumen, informe: vistaInforme, zonas: vistaZonas, alertas: vistaAlertas, registro: vistaRegistro, ajustes: vistaAjustes,
     "mis-zonas": vistaMisZonas, tarea: vistaTarea, descarga: vistaDescarga, exhumacion: vistaExhumacion, inhumacion: vistaInhumacion, "mis-registros": vistaMisRegistros,
   };
   $("#vista").innerHTML = vistas[UI.pestana]();
@@ -740,6 +741,108 @@ function plantasPabellon(zonaId) {
       <tbody>${PLANTAS.map((nombre, i) => `<tr><td><strong>${nombre}</strong></td><td><strong>${cuenta(i + 1, "disponible")}</strong></td>
         <td>${extra(i + 1)}</td><td>${cuenta(i + 1, "reservado")}</td><td>${cuenta(i + 1, "en_mantenimiento")}</td></tr>`).join("")}</tbody>
     </table></div>`;
+}
+
+/* ───────────────────────── Informe diario (solo Director) ───────────────────────── */
+// Día calendario en Córdoba ("2026-10-17").
+const diaDe = (fecha) => new Intl.DateTimeFormat("en-CA", { timeZone: ZONA_HORARIA, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(fecha));
+const diaLargo = (dia) => new Date(dia + "T12:00:00").toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+function sumarDias(dia, n) { const d = new Date(dia + "T12:00:00"); d.setDate(d.getDate() + n); return diaDe(d); }
+
+function clasificar(r) {
+  const a = r.payload.accion;
+  if (a === "tarea") return "tarea";
+  if (ACCIONES_LIBERAN.includes(a)) return a === "exhumacion" ? "exhumacion" : "descarga";
+  return "inhumacion";
+}
+
+// Trabajos pendientes según el semáforo: vencidos (rojo), por vencer (amarillo) y los que vencen en 7 días.
+function pendientes() {
+  const lista = [];
+  for (const z of Datos.estado.zonas) {
+    for (const t of semaforoZona(z).tareas) {
+      const restan = t.dias === null ? -Infinity : t.limR - t.dias;
+      if (t.color === "verde" && restan > 7) continue;
+      lista.push({ zona: z, tarea: t.tarea, color: t.color, ultima: t.ultima, dias: t.dias, restan });
+    }
+  }
+  return lista.sort((a, b) => a.restan - b.restan);
+}
+
+function vistaInforme() {
+  if (UI.usuario?.rol !== "directivo") return '<div class="card vacio">El informe diario lo ve solo el Director.</div>';
+  const hoy = diaDe(new Date());
+  const dia = UI.diaInforme || hoy;
+  const regs = Datos.estado.registros.filter((r) => diaDe(r.registrado_en) === dia);
+  const cuenta = { tarea: 0, descarga: 0, exhumacion: 0, inhumacion: 0 };
+  regs.forEach((r) => cuenta[clasificar(r)]++);
+  const fotos = regs.reduce((n, r) => n + (r.payload.datos.fotos_sha256?.length || 0), 0);
+  const porPersona = {};
+  regs.forEach((r) => (porPersona[r.payload.usuario.nombre] = (porPersona[r.payload.usuario.nombre] || 0) + 1));
+  const porTarea = {};
+  regs.filter((r) => r.payload.accion === "tarea").forEach((r) => (porTarea[r.payload.datos.tipo_tarea] = (porTarea[r.payload.datos.tipo_tarea] || 0) + 1));
+  const pend = pendientes();
+  const vencidas = pend.filter((p) => p.color === "rojo_critico");
+  const porVencer = pend.filter((p) => p.color === "amarillo");
+  const proximas = pend.filter((p) => p.color === "verde");
+  const semana = Array.from({ length: 7 }, (_, i) => sumarDias(dia, i - 6)).map((d) => {
+    const rs = Datos.estado.registros.filter((r) => diaDe(r.registrado_en) === d);
+    const c = { tarea: 0, descarga: 0, exhumacion: 0, inhumacion: 0 };
+    rs.forEach((r) => c[clasificar(r)]++);
+    return { d, c, total: rs.length };
+  });
+  const kpi = (n, txt, clase = "") => `<div class="card kpi ${clase}"><div class="numero">${n}</div><div class="muted chico">${txt}</div></div>`;
+  const filaPend = (p) => `<tr>
+      <td><button type="button" class="enlace" data-zona="${p.zona.id}">${esc(p.zona.nombre)}</button></td>
+      <td>${nombreTarea(p.tarea)}</td>
+      <td>${p.ultima ? fmtDia(p.ultima) : "Nunca"}</td>
+      <td>${p.dias === null ? "Sin registro" : p.restan < 0 ? `<strong>Atrasada ${fmtNum(-p.restan)} d</strong>` : `Vence en ${fmtNum(Math.max(0, p.restan))} d`}</td>
+      <td>${chipColor(p.color)}</td></tr>`;
+  const tablaPend = (lista, vacio) => lista.length ? `<div class="tabla-scroll"><table>
+      <thead><tr><th>Zona</th><th>Tarea</th><th>Última vez</th><th>Plazo</th><th>Estado</th></tr></thead>
+      <tbody>${lista.map(filaPend).join("")}</tbody></table></div>` : `<div class="card vacio">${vacio}</div>`;
+  return `<div class="fila entre informe-cabecera">
+      <div><h1>Informe diario</h1><p class="muted" style="margin:0">${diaLargo(dia)}${dia === hoy ? " (hoy)" : ""}</p></div>
+      <div class="fila no-imprimir">
+        <button class="btn sec" type="button" data-dia="${sumarDias(dia, -1)}" aria-label="Día anterior">←</button>
+        <input type="date" data-elegir-dia value="${dia}" max="${hoy}" style="width:auto">
+        <button class="btn sec" type="button" data-dia="${sumarDias(dia, 1)}" ${dia >= hoy ? "disabled" : ""} aria-label="Día siguiente">→</button>
+        <button class="btn" type="button" data-accion="imprimir">Imprimir</button>
+      </div></div>
+    <h2>Trabajos realizados</h2>
+    <div class="grilla kpis">
+      ${kpi(cuenta.tarea, "tareas de mantenimiento")}
+      ${kpi(cuenta.descarga, "descargas (liberan)", "ok")}
+      ${kpi(cuenta.exhumacion, "exhumaciones (liberan)", "ok")}
+      ${kpi(cuenta.inhumacion, "inhumaciones (ocupan)")}
+      ${kpi(fotos, "fotos adjuntas")}
+    </div>
+    ${regs.length ? `
+      <div class="grilla" style="margin-top:12px">
+        <div class="card"><h3>Por persona</h3>${Object.entries(porPersona).map(([n, c]) => `<div class="fila entre"><span>${esc(n)}</span><strong>${c}</strong></div>`).join("")}</div>
+        <div class="card"><h3>Por tipo de tarea</h3>${Object.entries(porTarea).map(([t, c]) => `<div class="fila entre"><span>${nombreTarea(t)}</span><strong>${c}</strong></div>`).join("") || '<span class="muted">Sin tareas de mantenimiento.</span>'}</div>
+      </div>
+      <h3 style="margin-top:16px">Detalle del día</h3>${tablaMovimientos(regs.slice().reverse())}`
+    : '<div class="card vacio" style="margin-top:12px">No se registraron trabajos firmados este día.</div>'}
+    <h2>Trabajos pendientes</h2>
+    <p class="muted chico">Según los plazos de mantenimiento de cada zona${enTemporada() ? " (acortados por la temporada de lluvias)" : ""}. Estado al momento de abrir el informe.</p>
+    <div class="resumen-semaforo">
+      <span class="chip rojo_critico">${vencidas.length} vencidas</span>
+      <span class="chip amarillo">${porVencer.length} por vencer</span>
+      <span class="chip verde">${proximas.length} vencen en los próximos 7 días</span>
+    </div>
+    <h3>Vencidas (hacer primero)</h3>${tablaPend(vencidas, "No hay tareas vencidas.")}
+    <h3 style="margin-top:16px">Por vencer</h3>${tablaPend(porVencer, "No hay tareas por vencer.")}
+    <details class="card" style="margin-top:16px"><summary><strong>Próximos 7 días (${proximas.length})</strong> <span class="muted chico">— tocá para ver</span></summary>
+      <div style="margin-top:10px">${tablaPend(proximas, "Nada vence en los próximos 7 días.")}</div></details>
+    <h2>Últimos 7 días</h2>
+    <div class="tabla-scroll"><table>
+      <thead><tr><th>Día</th><th>Tareas</th><th>Descargas</th><th>Exhumaciones</th><th>Inhumaciones</th><th>Total</th></tr></thead>
+      <tbody>${semana.map(({ d, c, total }) => `<tr ${d === dia ? 'class="dia-actual"' : ""}>
+        <td><button type="button" class="enlace" data-dia="${d}">${new Date(d + "T12:00:00").toLocaleDateString("es-AR", { weekday: "short", day: "2-digit", month: "2-digit" })}</button></td>
+        <td>${c.tarea}</td><td>${c.descarga}</td><td>${c.exhumacion}</td><td>${c.inhumacion}</td><td><strong>${total}</strong></td></tr>`).join("")}</tbody>
+    </table></div>
+    <p class="muted chico" style="margin-top:12px">Informe generado el ${fmtFecha(new Date().toISOString())} · ${esc(UI.usuario.nombre)}</p>`;
 }
 
 function vistaAlertas() {
@@ -1147,6 +1250,7 @@ document.addEventListener("click", async (ev) => {
     }
     return;
   }
+  if (d.dia) { UI.diaInforme = d.dia; render(); return; }
   if (d.filtroDisp) { UI.filtroDisp.tipo = d.filtroDisp; render(); return; }
   if (d.verDisp) {
     const [tipo, tam] = d.verDisp.split("|");
@@ -1177,6 +1281,7 @@ document.addEventListener("click", async (ev) => {
       try { localStorage.removeItem(CLAVE_SESION); } catch { /* sin almacenamiento */ }
       render(); break;
     case "cerrar": UI.firmaPendiente = null; cerrarModal(); break;
+    case "imprimir": window.print(); break;
     case "borrar-trazo": { const c = $("#lienzo"); c.getContext("2d").clearRect(0, 0, c.width, c.height); c.trazos = 0; break; }
     case "verificar": {
       el.disabled = true; el.textContent = "Verificando…";
@@ -1204,6 +1309,7 @@ document.addEventListener("change", async (ev) => {
     return;
   }
   if (ev.target.matches("[data-listado-zona]")) { UI.listado.zona = ev.target.value; abrirListado(); return; }
+  if (ev.target.matches("[data-elegir-dia]")) { if (ev.target.value) { UI.diaInforme = ev.target.value; render(); } return; }
   if (ev.target.matches("[data-filtro-extra]")) { UI.filtroDisp.extra = ev.target.checked; render(); return; }
   if (ev.target.matches("[data-filtro-zona]")) { Object.assign(UI.filtroDescarga, { zona: ev.target.value, planta: "", lugar: "", cuadro: "", fila: "" }); actualizarListaEspacios(); }
   if (ev.target.matches("[data-filtro-lugar]")) { Object.assign(UI.filtroDescarga, { lugar: ev.target.value, fila: "" }); actualizarListaEspacios(); }
