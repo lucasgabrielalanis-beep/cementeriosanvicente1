@@ -34,6 +34,7 @@ tags:
   - name: Mantenimiento
   - name: Operaciones
   - name: Alertas
+  - name: Reclamos
   - name: Dispositivos
 
 paths:
@@ -389,6 +390,101 @@ paths:
         '200': { description: Umbrales guardados y stock reevaluado }
         '403': { $ref: '#/components/responses/SinPermiso' }
 
+  /reclamos:
+    get:
+      tags: [Reclamos]
+      summary: Reclamos de contribuyentes (filtrables por estado y período)
+      parameters:
+        - in: query
+          name: estado
+          schema: { type: string, enum: [pendiente, en_proceso, resuelto] }
+        - in: query
+          name: desde
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Reclamo' }
+    post:
+      tags: [Reclamos]
+      summary: Carga un reclamo (Director o capataz)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [contribuyente, motivo, detalle]
+              properties:
+                contribuyente: { type: string }
+                telefono: { type: string }
+                motivo: { $ref: '#/components/schemas/MotivoReclamo' }
+                zona_id: { type: integer, nullable: true }
+                ubicacion: { type: string }
+                detalle: { type: string }
+      responses:
+        '201':
+          description: Reclamo creado (el id es el N° de reclamo)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Reclamo' }
+
+  /reclamos/{id}/seguimiento:
+    post:
+      tags: [Reclamos]
+      summary: Cambia el estado del reclamo (en proceso, resuelto o reabierto)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [estado]
+              properties:
+                estado: { type: string, enum: [pendiente, en_proceso, resuelto] }
+                nota: { type: string, description: 'Obligatoria al resolver: qué se hizo' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Reclamo' }
+        '422': { description: Falta la nota para resolver }
+
+  /reclamos/informe:
+    get:
+      tags: [Reclamos]
+      summary: Informe de reclamos (solo Director)
+      parameters:
+        - in: query
+          name: desde
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  recibidos: { type: integer }
+                  resueltos: { type: integer }
+                  sin_resolver: { type: integer }
+                  demorados: { type: integer, description: 'Sin resolver hace 7 días o más' }
+                  dias_promedio_resolucion: { type: number, nullable: true }
+                  por_motivo: { type: object, additionalProperties: { type: integer } }
+                  por_zona: { type: object, additionalProperties: { type: integer } }
+        '403': { $ref: '#/components/responses/SinPermiso' }
+
   /dispositivos/enrolar:
     post:
       tags: [Dispositivos]
@@ -712,6 +808,31 @@ components:
         umbral_critico: { type: integer }
         dias_cobertura_critico: { type: integer, nullable: true }
 
+    MotivoReclamo:
+      type: string
+      enum: [limpieza, pasto, deterioro, filtraciones, robo, ubicacion, atencion, seguridad, otro]
+    Reclamo:
+      type: object
+      properties:
+        id: { type: integer, description: 'N° de reclamo' }
+        recibido_en: { type: string, format: date-time }
+        contribuyente: { type: string }
+        telefono: { type: string, nullable: true }
+        motivo: { $ref: '#/components/schemas/MotivoReclamo' }
+        zona_id: { type: integer, nullable: true }
+        ubicacion: { type: string, nullable: true }
+        detalle: { type: string }
+        estado: { type: string, enum: [pendiente, en_proceso, resuelto] }
+        resuelto_en: { type: string, format: date-time, nullable: true }
+        seguimiento:
+          type: array
+          items:
+            type: object
+            properties:
+              estado: { type: string }
+              nota: { type: string, nullable: true }
+              usuario: { type: string }
+              creado_en: { type: string, format: date-time }
     Error:
       type: object
       required: [codigo, mensaje]

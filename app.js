@@ -22,7 +22,7 @@ const CLAVE_DATOS = "cementerio-sv-demo-v5";
 const CLAVE_SESION = "cementerio-sv-sesion";
 // Versión publicada. Tiene que coincidir con version.json: si el servidor tiene una más nueva,
 // la app avisa para recargar (así nadie usa una versión vieja guardada en el celular).
-const VERSION_APP = "2026-10-17.5";
+const VERSION_APP = "2026-10-17.6";
 const ZONA_HORARIA = "America/Argentina/Cordoba";
 const PIN_DEMO = "1234";
 const DIA = 86400000;
@@ -162,7 +162,7 @@ async function datosIniciales() {
     },
     consumoBase90: { "nicho|normal": 270, "nicho|extraordinario": 50, "fosa|normal": 360, "fosa|extraordinario": 30, "fosa|angelito": CONSUMO_ANGELITOS },
     ocupadosBase, espacios,
-    registros: [], dispositivos: {}, alertasVistas: {},
+    registros: [], dispositivos: {}, alertasVistas: {}, reclamos: [],
   };
 }
 // Ubicación de cada nicho o fosa (datos de ejemplo; con la base real viene del padrón).
@@ -271,6 +271,7 @@ const Datos = {
       this.guardar();
     }
     if (!this.estado || this.estado.version !== 13) { this.estado = await datosIniciales(); this.guardar(); }
+    this.estado.reclamos ||= []; // reclamos de contribuyentes (se agregaron después)
     return this.estado;
   },
   guardar(silencioso = false) {
@@ -355,6 +356,14 @@ function alertasActuales() {
       clave: "mant:" + z.id, nivel: sem.color === "rojo_critico" ? "critica" : "advertencia", tipo: "mantenimiento", zona: z.id,
       titulo: (sem.color === "rojo_critico" ? "Mantenimiento crítico en " : "Mantenimiento por vencer en ") + z.nombre,
       detalle: `${nombreTarea(t.tarea)}: ${t.dias === null ? "sin registro" : "hace " + fmtNum(t.dias) + " días"} (límite ${fmtNum(t.limR)} días)`,
+    });
+  }
+  const demorados = (Datos.estado.reclamos || []).filter(demorado);
+  if (demorados.length) {
+    lista.push({
+      clave: "reclamos:" + demorados.map((rc) => rc.numero).join(","), nivel: "advertencia", tipo: "reclamos", pestana: "reclamos",
+      titulo: demorados.length === 1 ? "1 reclamo de contribuyente demorado" : `${demorados.length} reclamos de contribuyentes demorados`,
+      detalle: `Sin resolver hace ${DIAS_RECLAMO_DEMORADO} días o más: ` + demorados.map((rc) => `N° ${rc.numero}`).join(", "),
     });
   }
   return lista.sort((a, b) => (a.nivel === b.nivel ? 0 : a.nivel === "critica" ? -1 : 1));
@@ -527,10 +536,10 @@ function cerrarModal() {
 
 const PESTANAS = {
   // El informe diario lo ve solo el Director.
-  directivo: [["resumen", "Resumen"], ["informe", "Informe diario"], ["capataces", "Capataces"], ["zonas", "Zonas"], ["alertas", "Alertas"], ["registro", "Registro firmado"], ["ajustes", "Ajustes"]],
+  directivo: [["resumen", "Resumen"], ["informe", "Informe diario"], ["reclamos", "Reclamos"], ["capataces", "Capataces"], ["zonas", "Zonas"], ["alertas", "Alertas"], ["registro", "Registro firmado"], ["ajustes", "Ajustes"]],
   // Los tableros (resumen, zonas, alertas, registro) los ven todos; los ajustes, solo directivos.
   // Capataces y operarios arrancan en el mismo Resumen que los directivos.
-  campo: [["resumen", "Resumen"], ["zonas", "Zonas"], ["alertas", "Alertas"], ["registro", "Registro firmado"], ["mis-zonas", "Mis zonas"], ["tarea", "Registrar tarea"], ["descarga", "Registrar descarga"], ["exhumacion", "Registrar exhumación"], ["inhumacion", "Registrar inhumación"], ["mis-registros", "Mis registros"]],
+  campo: [["resumen", "Resumen"], ["zonas", "Zonas"], ["alertas", "Alertas"], ["reclamos", "Reclamos"], ["registro", "Registro firmado"], ["mis-zonas", "Mis zonas"], ["tarea", "Registrar tarea"], ["descarga", "Registrar descarga"], ["exhumacion", "Registrar exhumación"], ["inhumacion", "Registrar inhumación"], ["mis-registros", "Mis registros"]],
 };
 const grupoRol = (u) => (u.rol === "directivo" ? "directivo" : "campo");
 
@@ -546,7 +555,7 @@ function render() {
   const activa = $("#pestanas [aria-current]");
   $("#pestanas").scrollLeft = activa ? Math.max(0, activa.offsetLeft - 16) : 0;
   const vistas = {
-    resumen: vistaResumen, informe: vistaInforme, capataces: vistaCapataces, zonas: vistaZonas, alertas: vistaAlertas, registro: vistaRegistro, ajustes: vistaAjustes,
+    resumen: vistaResumen, informe: vistaInforme, reclamos: vistaReclamos, capataces: vistaCapataces, zonas: vistaZonas, alertas: vistaAlertas, registro: vistaRegistro, ajustes: vistaAjustes,
     "mis-zonas": vistaMisZonas, tarea: vistaTarea, descarga: vistaDescarga, exhumacion: vistaExhumacion, inhumacion: vistaInhumacion, "mis-registros": vistaMisRegistros,
   };
   $("#vista").innerHTML = vistas[UI.pestana]();
@@ -875,6 +884,117 @@ function validarCapataz(f, idActual, pinObligatorio) {
   return null;
 }
 
+/* ───────────────────────── Reclamos de contribuyentes ───────────────────────── */
+// Los carga quien atiende al contribuyente (Director o capataz); los capataces los siguen y los resuelven.
+// El Director ve además el informe (por período, motivo, zona, estado y tiempos de respuesta).
+const MOTIVOS_RECLAMO = {
+  limpieza: "Falta de limpieza", pasto: "Pasto alto / corte de césped", deterioro: "Nicho o fosa deteriorado",
+  filtraciones: "Filtraciones o humedad", robo: "Robo o faltante de objetos", ubicacion: "No encuentra la ubicación / señalización",
+  atencion: "Atención al público", seguridad: "Iluminación / seguridad", otro: "Otro",
+};
+const ESTADOS_RECLAMO = { pendiente: "Pendiente", en_proceso: "En proceso", resuelto: "Resuelto" };
+const CHIP_RECLAMO = { pendiente: "critica", en_proceso: "advertencia", resuelto: "ok" };
+const DIAS_RECLAMO_DEMORADO = 7; // sin resolver después de esto, se marca como demorado
+const chipReclamo = (rc) => `<span class="chip ${CHIP_RECLAMO[rc.estado]}">${ESTADOS_RECLAMO[rc.estado]}</span>`;
+const diasAbierto = (rc) => Math.floor(((rc.resuelto_en ? new Date(rc.resuelto_en) : Date.now()) - new Date(rc.fecha)) / DIA);
+const demorado = (rc) => rc.estado !== "resuelto" && diasAbierto(rc) >= DIAS_RECLAMO_DEMORADO;
+
+function vistaReclamos() {
+  const esDirector = UI.usuario?.rol === "directivo";
+  const todos = Datos.estado.reclamos;
+  const periodo = UI.periodoReclamos || "30";
+  const desde = desdePeriodo(periodo);
+  const delPeriodo = todos.filter((rc) => diaDe(rc.fecha) >= desde);
+  const abiertos = todos.filter((rc) => rc.estado !== "resuelto");
+  const resueltosPer = todos.filter((rc) => rc.resuelto_en && diaDe(rc.resuelto_en) >= desde);
+  const promedio = resueltosPer.length ? resueltosPer.reduce((n, rc) => n + diasAbierto(rc), 0) / resueltosPer.length : null;
+  const filtro = UI.filtroReclamos || "abiertos";
+  const lista = (filtro === "abiertos" ? abiertos : filtro === "todos" ? delPeriodo : delPeriodo.filter((rc) => rc.estado === filtro))
+    .slice().sort((a, b) => (filtro === "abiertos" ? a.fecha.localeCompare(b.fecha) : b.fecha.localeCompare(a.fecha)));
+  const contar = (arr, clave) => arr.reduce((m, rc) => ((m[clave(rc)] = (m[clave(rc)] || 0) + 1), m), {});
+  const tablaConteo = (titulo, obj, nombre) => {
+    const filas = Object.entries(obj).sort((a, b) => b[1] - a[1]);
+    const max = Math.max(1, ...filas.map(([, n]) => n));
+    return `<div class="card"><h3>${titulo}</h3>${filas.map(([k, n]) => `<div class="conteo"><div class="fila entre"><span>${esc(nombre(k))}</span><strong>${n}</strong></div>
+      <div class="barra-umbral"><span style="width:${(n / max) * 100}%;background:var(--primary)"></span></div></div>`).join("") || '<span class="muted">Sin reclamos en el período.</span>'}</div>`;
+  };
+  const kpi = (n, txt, clase = "") => `<div class="card kpi ${clase}"><div class="numero">${n}</div><div class="muted chico">${txt}</div></div>`;
+  const btnP = ([id, txt]) => `<button type="button" class="opcion" style="min-height:auto" data-periodo-reclamos="${id}" aria-pressed="${periodo === id}">${txt}</button>`;
+  const btnF = (id, txt) => `<button type="button" class="opcion" style="min-height:auto" data-filtro-reclamos="${id}" aria-pressed="${filtro === id}">${txt}</button>`;
+  const fila = (rc) => `<tr class="${demorado(rc) ? "demorado" : ""}">
+      <td><button type="button" class="enlace" data-reclamo="${rc.id}"><strong>N° ${rc.numero}</strong></button><div class="muted chico">${fmtDia(rc.fecha)}</div></td>
+      <td>${esc(rc.contribuyente.nombre)}</td>
+      <td>${esc(MOTIVOS_RECLAMO[rc.motivo] || rc.motivo)}<div class="muted chico">${rc.zona ? esc(nombreZona(rc.zona)) : "Sin zona"}${rc.ubicacion ? " · " + esc(rc.ubicacion) : ""}</div></td>
+      <td>${chipReclamo(rc)}${demorado(rc) ? `<div class="chico" style="color:var(--rojo)"><strong>${diasAbierto(rc)} días sin resolver</strong></div>` : rc.estado === "resuelto" ? `<div class="muted chico">en ${diasAbierto(rc)} ${diasAbierto(rc) === 1 ? "día" : "días"}</div>` : ""}</td>
+    </tr>`;
+  const zonas = Datos.estado.zonas;
+  return `<div class="fila entre informe-cabecera">
+      <div><h1>Reclamos de contribuyentes</h1><p class="muted" style="margin:0">${esDirector ? "Carga, seguimiento e informe." : "Carga y seguimiento de los reclamos."}</p></div>
+      ${esDirector ? '<div class="fila no-imprimir"><button class="btn" type="button" data-accion="imprimir">Imprimir informe</button></div>' : ""}
+    </div>
+    ${esDirector ? `<h2>Informe</h2>
+    <div class="fila no-imprimir" style="margin-bottom:12px">${PERIODOS.map(btnP).join("")}</div>
+    <p class="muted chico solo-imprimir">Período: ${PERIODOS.find(([id]) => id === periodo)[1]}</p>
+    <div class="grilla kpis">
+      ${kpi(delPeriodo.length, "recibidos en el período")}
+      ${kpi(resueltosPer.length, "resueltos en el período", "ok")}
+      ${kpi(abiertos.length, "sin resolver (hoy)", abiertos.length ? "critica" : "")}
+      ${kpi(abiertos.filter(demorado).length, `demorados (${DIAS_RECLAMO_DEMORADO} días o más)`, abiertos.some(demorado) ? "critica" : "")}
+      ${kpi(promedio === null ? "—" : fmtNum(promedio, 1), "días promedio para resolver")}
+    </div>
+    <div class="grilla" style="margin-top:12px">
+      ${tablaConteo("Por motivo", contar(delPeriodo, (rc) => rc.motivo), (k) => MOTIVOS_RECLAMO[k] || k)}
+      ${tablaConteo("Por zona", contar(delPeriodo, (rc) => rc.zona || 0), (k) => (Number(k) ? nombreZona(Number(k)) : "Sin zona"))}
+      ${tablaConteo("Por estado", contar(delPeriodo, (rc) => rc.estado), (k) => ESTADOS_RECLAMO[k])}
+    </div>` : ""}
+    <h2>Listado</h2>
+    <div class="fila no-imprimir" style="margin-bottom:8px">${btnF("abiertos", `Sin resolver (${abiertos.length})`)}${btnF("pendiente", "Pendientes")}${btnF("en_proceso", "En proceso")}${btnF("resuelto", "Resueltos")}${btnF("todos", "Todos")}</div>
+    ${filtro === "abiertos" ? '<p class="muted chico">Todos los que siguen sin resolver, del más viejo al más nuevo.</p>' : `<p class="muted chico">Recibidos en el período: ${PERIODOS.find(([id]) => id === periodo)[1].toLowerCase()}.</p>`}
+    ${lista.length ? `<div class="tabla-scroll"><table>
+      <thead><tr><th>Reclamo</th><th>Contribuyente</th><th>Motivo y lugar</th><th>Estado</th></tr></thead>
+      <tbody>${lista.map(fila).join("")}</tbody></table></div>` : `<div class="card vacio">${filtro === "abiertos" ? "No hay reclamos sin resolver." : "No hay reclamos con ese filtro."}</div>`}
+    <h2 class="no-imprimir">Cargar reclamo</h2>
+    <form class="form card no-imprimir" data-form="reclamo">
+      <div class="dos-col">
+        <label>Apellido y nombre del contribuyente<input name="nombre" required maxlength="120" autocomplete="off"></label>
+        <label>Teléfono de contacto <span class="muted">(opcional)</span><input name="telefono" type="tel" inputmode="tel" maxlength="30" autocomplete="off"></label>
+      </div>
+      <label>Motivo<select name="motivo" required><option value="">Elegí el motivo</option>${Object.entries(MOTIVOS_RECLAMO).map(([k, t]) => `<option value="${k}">${t}</option>`).join("")}</select></label>
+      <div class="dos-col">
+        <label>Zona <span class="muted">(opcional)</span><select name="zona"><option value="">Sin zona / general</option>${zonas.map((z) => `<option value="${z.id}">${esc(z.nombre)}</option>`).join("")}</select></label>
+        <label>Ubicación <span class="muted">(opcional)</span><input name="ubicacion" maxlength="120" autocomplete="off" placeholder="Ej.: Cuadro 12 · Fosa 34"></label>
+      </div>
+      <label>Detalle del reclamo<textarea name="detalle" required maxlength="1000"></textarea></label>
+      <button class="btn" type="submit">Guardar reclamo</button>
+    </form>`;
+}
+
+function detalleReclamo(id) {
+  const rc = Datos.estado.reclamos.find((x) => x.id === id);
+  if (!rc) return;
+  const siguiente = rc.estado === "pendiente" ? "en_proceso" : null;
+  abrirModal(`<h2 style="margin-top:0">Reclamo N° ${rc.numero} ${chipReclamo(rc)}</h2>
+    <dl class="detalle-reclamo">
+      <dt>Recibido</dt><dd>${fmtFecha(rc.fecha)} · cargó ${esc(rc.registrado_por.nombre)}</dd>
+      <dt>Contribuyente</dt><dd>${esc(rc.contribuyente.nombre)}${rc.contribuyente.telefono ? ` · <a href="tel:${esc(rc.contribuyente.telefono.replace(/[^\d+]/g, ""))}">${esc(rc.contribuyente.telefono)}</a>` : ""}</dd>
+      <dt>Motivo</dt><dd>${esc(MOTIVOS_RECLAMO[rc.motivo] || rc.motivo)}</dd>
+      <dt>Lugar</dt><dd>${rc.zona ? esc(nombreZona(rc.zona)) : "Sin zona"}${rc.ubicacion ? " · " + esc(rc.ubicacion) : ""}</dd>
+      <dt>Detalle</dt><dd style="white-space:pre-wrap">${esc(rc.detalle)}</dd>
+      ${rc.estado === "resuelto" ? `<dt>Resuelto</dt><dd>${fmtFecha(rc.resuelto_en)} (${diasAbierto(rc)} ${diasAbierto(rc) === 1 ? "día" : "días"})</dd>` : demorado(rc) ? `<dt>Demora</dt><dd style="color:var(--rojo)"><strong>${diasAbierto(rc)} días sin resolver</strong></dd>` : ""}
+    </dl>
+    <h3>Seguimiento</h3>
+    <ul class="historial">${rc.historial.map((h) => `<li><strong>${ESTADOS_RECLAMO[h.estado]}</strong> · ${fmtFecha(h.fecha)} · ${esc(h.usuario)}${h.nota ? `<div>${esc(h.nota)}</div>` : ""}</li>`).join("")}</ul>
+    ${rc.estado !== "resuelto" ? `<form class="form" data-form="seguimiento-reclamo" data-id="${rc.id}">
+      <label>Qué se hizo / respuesta al contribuyente${siguiente ? ' <span class="muted">(opcional para "En proceso")</span>' : ""}<textarea name="nota" maxlength="600"></textarea></label>
+      <input type="hidden" name="estado" value="">
+      <div class="fila">
+        ${siguiente ? '<button class="btn sec" type="submit" data-estado-reclamo="en_proceso">Pasar a En proceso</button>' : ""}
+        <button class="btn" type="submit" data-estado-reclamo="resuelto">Marcar resuelto</button>
+        <button class="btn sec" type="button" data-accion="cerrar">Cerrar</button>
+      </div></form>`
+    : `<div class="fila"><button class="btn sec" type="button" data-reabrir-reclamo="${rc.id}">Reabrir</button><button class="btn" type="button" data-accion="cerrar">Cerrar</button></div>`}`);
+}
+
 /* ───────────────────────── Informe diario (solo Director) ───────────────────────── */
 // Día calendario en Córdoba ("2026-10-17").
 const diaDe = (fecha) => new Intl.DateTimeFormat("en-CA", { timeZone: ZONA_HORARIA, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(fecha));
@@ -956,6 +1076,13 @@ function vistaInforme() {
       </div>
       <h3 style="margin-top:16px">Detalle del día</h3>${tablaMovimientos(regs.slice().reverse())}`
     : '<div class="card vacio" style="margin-top:12px">No se registraron trabajos firmados este día.</div>'}
+    <h2>Reclamos de contribuyentes</h2>
+    <div class="grilla kpis">
+      ${kpi(Datos.estado.reclamos.filter((rc) => diaDe(rc.fecha) === dia).length, "reclamos recibidos")}
+      ${kpi(Datos.estado.reclamos.filter((rc) => rc.resuelto_en && diaDe(rc.resuelto_en) === dia).length, "reclamos resueltos", "ok")}
+      ${kpi(Datos.estado.reclamos.filter((rc) => rc.estado !== "resuelto").length, "sin resolver (hoy)")}
+    </div>
+    <p class="chico no-imprimir"><button type="button" class="enlace" data-pestana="reclamos">Ver los reclamos →</button></p>
     <h2>Trabajos pendientes</h2>
     <p class="muted chico">Según los plazos de mantenimiento de cada zona${enTemporada() ? " (acortados por la temporada de lluvias)" : ""}. Estado al momento de abrir el informe.</p>
     <div class="resumen-semaforo">
@@ -983,7 +1110,7 @@ function vistaAlertas() {
   const vistas = todas.filter(alertaVista);
   const item = (a, conBoton) => `<div class="card alerta">
       <div>${chipNivel(a.nivel)} <strong>${esc(a.titulo)}</strong><div class="muted chico">${esc(a.detalle)}</div></div>
-      <div class="fila">${a.zona ? `<button class="btn sec" type="button" data-zona="${a.zona}">Ver</button>` : ""}${conBoton ? `<button class="btn sec" type="button" data-vista="${esc(a.clave)}|${a.nivel}">Marcar vista</button>` : ""}</div>
+      <div class="fila">${a.zona ? `<button class="btn sec" type="button" data-zona="${a.zona}">Ver</button>` : a.pestana ? `<button class="btn sec" type="button" data-pestana="${a.pestana}">Ver</button>` : ""}${conBoton ? `<button class="btn sec" type="button" data-vista="${esc(a.clave)}|${a.nivel}">Marcar vista</button>` : ""}</div>
     </div>`;
   return `<h1>Alertas</h1>
     <p class="muted">Se abren y se cierran solas según el stock y los plazos de mantenimiento.</p>
@@ -1386,6 +1513,19 @@ document.addEventListener("click", async (ev) => {
   }
   if (d.dia) { UI.diaInforme = d.dia; render(); return; }
   if (d.periodo) { UI.periodoRanking = d.periodo; render(); return; }
+  if (d.periodoReclamos) { UI.periodoReclamos = d.periodoReclamos; render(); return; }
+  if (d.filtroReclamos) { UI.filtroReclamos = d.filtroReclamos; render(); return; }
+  if (d.reclamo) { detalleReclamo(d.reclamo); return; }
+  if (d.estadoReclamo) { el.form.elements.estado.value = d.estadoReclamo; return; } // sigue al submit del formulario
+  if (d.reabrirReclamo) {
+    const rc = Datos.estado.reclamos.find((x) => x.id === d.reabrirReclamo);
+    if (rc) {
+      rc.estado = "pendiente"; rc.resuelto_en = null;
+      rc.historial.push({ fecha: new Date().toISOString(), estado: "pendiente", usuario: UI.usuario.nombre, nota: "Reabierto" });
+      Datos.guardar(); render(); detalleReclamo(rc.id); avisar(`Reclamo N° ${rc.numero} reabierto.`);
+    }
+    return;
+  }
   if (d.editarCapataz) { editarCapataz(d.editarCapataz); return; }
   if (d.activarCapataz) {
     const u = Datos.estado.usuarios.find((x) => x.id === d.activarCapataz);
@@ -1586,6 +1726,33 @@ document.addEventListener("submit", async (ev) => {
           <button class="btn sec" type="button" data-registro="${reg.secuencia}">Ver comprobante</button>
           <button class="btn sec" type="button" data-pestana="resumen">Ir al Resumen</button>
         </div></div>`);
+    } else if (tipoForm === "reclamo") {
+      const nombre = f.nombre.value.trim(), detalle = f.detalle.value.trim();
+      if (nombre.length < 3) { avisar("Escribí el nombre del contribuyente."); return; }
+      if (!f.motivo.value) { avisar("Elegí el motivo."); return; }
+      if (!detalle) { avisar("Escribí el detalle del reclamo."); return; }
+      const ahora = new Date().toISOString();
+      const rc = {
+        id: "rc-" + uuid().slice(0, 8), numero: Math.max(0, ...Datos.estado.reclamos.map((x) => x.numero)) + 1, fecha: ahora,
+        contribuyente: { nombre, telefono: f.telefono.value.trim() || undefined },
+        motivo: f.motivo.value, zona: Number(f.zona.value) || null, ubicacion: f.ubicacion.value.trim() || undefined, detalle,
+        estado: "pendiente", resuelto_en: null, registrado_por: { id: UI.usuario.id, nombre: UI.usuario.nombre },
+        historial: [{ fecha: ahora, estado: "pendiente", usuario: UI.usuario.nombre, nota: "Reclamo recibido" }],
+      };
+      Datos.estado.reclamos.push(rc);
+      if (!Datos.guardar()) { Datos.estado.reclamos.pop(); return; }
+      UI.filtroReclamos = "abiertos"; render(); avisar(`Reclamo N° ${rc.numero} guardado.`);
+    } else if (tipoForm === "seguimiento-reclamo") {
+      const rc = Datos.estado.reclamos.find((x) => x.id === form.dataset.id);
+      const estado = f.estado.value || ev.submitter?.dataset.estadoReclamo;
+      if (!rc || !ESTADOS_RECLAMO[estado]) return;
+      const nota = f.nota.value.trim();
+      if (estado === "resuelto" && !nota) { avisar("Para marcarlo resuelto, escribí qué se hizo."); f.nota.focus(); return; }
+      const ahora = new Date().toISOString();
+      rc.estado = estado; rc.resuelto_en = estado === "resuelto" ? ahora : null;
+      rc.historial.push({ fecha: ahora, estado, usuario: UI.usuario.nombre, nota: nota || undefined });
+      Datos.guardar(); render(); detalleReclamo(rc.id);
+      avisar(estado === "resuelto" ? `Reclamo N° ${rc.numero} resuelto.` : `Reclamo N° ${rc.numero} en proceso.`);
     } else if (tipoForm === "nuevo-capataz" || tipoForm === "editar-capataz") {
       if (UI.usuario?.rol !== "directivo") return;
       const nuevo = tipoForm === "nuevo-capataz";
