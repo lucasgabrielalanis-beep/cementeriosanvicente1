@@ -22,7 +22,7 @@ const CLAVE_DATOS = "cementerio-sv-demo-v5";
 const CLAVE_SESION = "cementerio-sv-sesion";
 // Versión publicada. Tiene que coincidir con version.json: si el servidor tiene una más nueva,
 // la app avisa para recargar (así nadie usa una versión vieja guardada en el celular).
-const VERSION_APP = "2026-10-17.6";
+const VERSION_APP = "2026-10-17.7";
 const ZONA_HORARIA = "America/Argentina/Cordoba";
 const PIN_DEMO = "1234";
 const DIA = 86400000;
@@ -40,6 +40,9 @@ const TAREAS = {
 };
 // Tareas que ya no se ofrecen, pero pueden figurar en registros firmados anteriores.
 const TAREAS_ANTERIORES = { desmalezado: "Desmalezado", desagues_pluviales: "Limpieza de desagües", reparacion_caminos: "Reparación de caminos" };
+// Cada persona se identifica por su DNI (pedido del dueño; antes era el legajo, que se guarda en el mismo campo).
+// Los valores viejos que no son un DNI (legajos como "C-101" o firmas anteriores) se siguen mostrando como legajo.
+const idPersona = (v) => (/^\d{7,8}$/.test(String(v ?? "")) ? "DNI " + Number(v).toLocaleString("es-AR") : v ? "Legajo " + v : "Sin DNI cargado");
 const nombreTarea = (k) => TAREAS[k] || TAREAS_ANTERIORES[k] || k;
 const MAX_FOTOS = 3;
 const COLORES = { verde: "Verde", amarillo: "Amarillo", rojo_critico: "Rojo crítico" };
@@ -545,7 +548,7 @@ const grupoRol = (u) => (u.rol === "directivo" ? "directivo" : "campo");
 
 function render() {
   const u = UI.usuario;
-  $("#sesion").innerHTML = u ? `<span>${esc(u.nombre)}<span class="rol">Legajo ${esc(u.legajo)}</span></span><button type="button" data-accion="salir">Salir</button>` : "";
+  $("#sesion").innerHTML = u ? `<span>${esc(u.nombre)}<span class="rol">${esc(idPersona(u.legajo))}</span></span><button type="button" data-accion="salir">Salir</button>` : "";
   if (!u) { $("#pestanas").innerHTML = ""; $("#vista").innerHTML = vistaLogin(); return; }
   const pest = PESTANAS[grupoRol(u)];
   if (!pest.some(([id]) => id === UI.pestana)) UI.pestana = pest[0][0];
@@ -824,7 +827,7 @@ function vistaCapataces() {
     <div class="fila" style="margin-bottom:12px">${PERIODOS.map(btn).join("")}</div>
     ${ranking.length ? `<div class="lista-alertas">${ranking.map((x, i) => `<div class="card ranking ${i === 0 && x.total ? "primero" : ""}">
         <div class="ranking-fila"><span class="puesto">${medalla(i, x.total)}</span>
-          <div class="ranking-nombre"><strong>${esc(x.u.nombre)}</strong>${x.u.activo === false ? ' <span class="chip advertencia">Inactivo</span>' : ""}<div class="muted chico">Legajo ${esc(x.u.legajo)}${x.ultimo ? " · último trabajo " + fmtFecha(x.ultimo) : ""}</div></div>
+          <div class="ranking-nombre"><strong>${esc(x.u.nombre)}</strong>${x.u.activo === false ? ' <span class="chip advertencia">Inactivo</span>' : ""}<div class="muted chico">${esc(idPersona(x.u.legajo))}${x.ultimo ? " · último trabajo " + fmtFecha(x.ultimo) : ""}</div></div>
           <div class="total"><strong>${x.total}</strong><span class="muted chico">trabajos</span></div></div>
         <div class="barra-umbral"><span style="width:${(x.total / max) * 100}%;background:var(--primary)"></span></div>
         <div class="muted chico">Tareas ${x.c.tarea} · Descargas ${x.c.descarga} · Exhumaciones ${x.c.exhumacion} · Inhumaciones ${x.c.inhumacion} · Fotos ${x.fotos} · Días trabajados ${x.dias}</div>
@@ -833,9 +836,9 @@ function vistaCapataces() {
     <h2>Administrar capataces</h2>
     <p class="muted chico">Cada capataz entra con su nombre y su PIN. El PIN no se muestra nunca: si alguien se lo olvida, le asignás uno nuevo.</p>
     <div class="tabla-scroll"><table>
-      <thead><tr><th>Nombre</th><th>Legajo</th><th>Estado</th><th></th></tr></thead>
+      <thead><tr><th>Nombre</th><th>DNI</th><th>Estado</th><th></th></tr></thead>
       <tbody>${capataces.map((u) => `<tr>
-        <td><strong>${esc(u.nombre)}</strong></td><td>${esc(u.legajo)}</td>
+        <td><strong>${esc(u.nombre)}</strong></td><td>${esc(idPersona(u.legajo))}</td>
         <td>${u.activo === false ? '<span class="chip advertencia">Inactivo</span>' : '<span class="chip ok">Activo</span>'}</td>
         <td><div class="fila"><button class="btn sec" type="button" data-editar-capataz="${u.id}" style="min-height:36px;padding:4px 12px">Editar</button>
           <button class="btn sec" type="button" data-activar-capataz="${u.id}" style="min-height:36px;padding:4px 12px">${u.activo === false ? "Activar" : "Desactivar"}</button></div></td>
@@ -844,7 +847,7 @@ function vistaCapataces() {
     <h3 style="margin-top:16px">Agregar capataz</h3>
     <form class="form card" data-form="nuevo-capataz">
       <label>Nombre y apellido<input name="nombre" required maxlength="80" autocomplete="off" placeholder="Ej.: Juan Pérez"></label>
-      <label>Legajo<input name="legajo" required maxlength="20" autocomplete="off" placeholder="Ej.: C-103"></label>
+      <label>N° de DNI <span class="muted">(solo números)</span><input name="legajo" required inputmode="numeric" maxlength="11" autocomplete="off" placeholder="Ej.: 30123456"></label>
       <div class="dos-col">
         <label>PIN <span class="muted">(4 a 8 números)</span><input name="pin" type="password" inputmode="numeric" required minlength="4" maxlength="8" autocomplete="new-password"></label>
         <label>Repetir PIN<input name="pin2" type="password" inputmode="numeric" required minlength="4" maxlength="8" autocomplete="new-password"></label>
@@ -859,7 +862,7 @@ function editarCapataz(id) {
   abrirModal(`<h2 style="margin-top:0">Editar capataz</h2>
     <form class="form" data-form="editar-capataz" data-id="${u.id}">
       <label>Nombre y apellido<input name="nombre" required maxlength="80" value="${esc(u.nombre)}" autocomplete="off"></label>
-      <label>Legajo<input name="legajo" required maxlength="20" value="${esc(u.legajo)}" autocomplete="off"></label>
+      <label>N° de DNI <span class="muted">(solo números)</span><input name="legajo" required inputmode="numeric" maxlength="11" value="${/^\d{7,8}$/.test(u.legajo) ? esc(u.legajo) : ""}" placeholder="Ej.: 30123456" autocomplete="off"></label>
       <div class="dos-col">
         <label>PIN nuevo <span class="muted">(dejar vacío para no cambiarlo)</span><input name="pin" type="password" inputmode="numeric" minlength="4" maxlength="8" autocomplete="new-password"></label>
         <label>Repetir PIN nuevo<input name="pin2" type="password" inputmode="numeric" minlength="4" maxlength="8" autocomplete="new-password"></label>
@@ -869,12 +872,13 @@ function editarCapataz(id) {
     </form>`);
 }
 
-// Valida nombre, legajo y PIN; devuelve un mensaje de error o null.
+// Valida nombre, DNI y PIN; devuelve un mensaje de error o null.
+const limpiarDni = (v) => String(v).replace(/[\s.\-]/g, "");
 function validarCapataz(f, idActual, pinObligatorio) {
-  const nombre = f.nombre.value.trim(), legajo = f.legajo.value.trim();
+  const nombre = f.nombre.value.trim(), legajo = limpiarDni(f.legajo.value);
   if (nombre.length < 3) return "Escribí el nombre y apellido.";
-  if (!legajo) return "Escribí el legajo.";
-  if (Datos.estado.usuarios.some((u) => u.id !== idActual && u.legajo.toLowerCase() === legajo.toLowerCase())) return "Ya hay otra persona con ese legajo.";
+  if (!/^\d{7,8}$/.test(legajo)) return "Escribí el DNI: 7 u 8 números.";
+  if (Datos.estado.usuarios.some((u) => u.id !== idActual && u.legajo === legajo)) return "Ya hay otra persona con ese DNI.";
   if (Datos.estado.usuarios.some((u) => u.id !== idActual && u.nombre.toLowerCase() === nombre.toLowerCase())) return "Ya hay otra persona con ese nombre.";
   const pin = f.pin.value;
   if (pinObligatorio || pin) {
@@ -1164,7 +1168,7 @@ function tablaRegistros(regs) {
     <thead><tr><th>Fecha y hora</th><th>Quién</th><th>Qué</th><th>Código</th></tr></thead>
     <tbody>${regs.map((r) => `<tr>
       <td>${fmtFecha(r.registrado_en)}</td>
-      <td>${esc(r.payload.usuario.nombre)}<br><span class="muted chico">Legajo ${esc(r.payload.usuario.legajo)}</span></td>
+      <td>${esc(r.payload.usuario.nombre)}<br><span class="muted chico">${esc(idPersona(r.payload.usuario.legajo))}</span></td>
       <td>${descripcionRegistro(r)}</td>
       <td><button type="button" class="enlace mono" data-registro="${r.secuencia}">${codigoCorto(r.hash_registro)}</button></td>
     </tr>`).join("")}</tbody></table></div>`;
@@ -1189,7 +1193,7 @@ function detalleRegistro(sec) {
       <dt>Qué</dt><dd>${descripcionRegistro(r)}</dd>
       ${p.datos.observaciones ? `<dt>Observaciones</dt><dd>${esc(p.datos.observaciones)}</dd>` : ""}
       ${p.datos.difunto ? `<dt>${ACCIONES_LIBERAN.includes(p.accion) ? "Persona" : "Difunto"}</dt><dd>${esc(p.datos.difunto.nombre)}${p.datos.difunto.dni ? " · DNI " + esc(p.datos.difunto.dni) : ""}${p.datos.difunto.fecha ? " · fallecimiento " + esc(p.datos.difunto.fecha) : ""}</dd>${p.datos.destino ? `<dt>Destino</dt><dd>${esc(p.datos.destino)}</dd>` : ""}<dt>N° de planilla</dt><dd>${esc(p.datos.expediente || "—")}</dd>` : ""}
-      <dt>Quién</dt><dd>${esc(p.usuario.nombre)} · legajo ${esc(p.usuario.legajo)}</dd>
+      <dt>Quién</dt><dd>${esc(p.usuario.nombre)} · ${esc(idPersona(p.usuario.legajo))}</dd>
       <dt>Hora de registro</dt><dd>${fmtFecha(r.registrado_en)}</dd>
       <dt>Hora del celular</dt><dd>${fmtFecha(p.hora_dispositivo)}</dd>
       <dt>Ubicación</dt><dd>${gps}</dd>
@@ -1439,7 +1443,7 @@ function abrirFirma(accion, datos, resumenHtml) {
   UI.firmaPendiente = { accion, datos, gps: null };
   abrirModal(`<h2 style="margin-top:0">Conformidad y firma</h2>
     <div class="resumen-firma"><dl>${resumenHtml}
-      <dt>Quién</dt><dd>${esc(UI.usuario.nombre)} · legajo ${esc(UI.usuario.legajo)}</dd>
+      <dt>Quién</dt><dd>${esc(UI.usuario.nombre)} · ${esc(idPersona(UI.usuario.legajo))}</dd>
       <dt>Ubicación</dt><dd id="gps-estado">Buscando ubicación…</dd>
     </dl></div>
     <form class="form" data-form="firma" style="margin-top:14px">
@@ -1759,7 +1763,7 @@ document.addEventListener("submit", async (ev) => {
       const id = nuevo ? null : form.dataset.id;
       const error = validarCapataz(f, id, nuevo);
       if (error) { avisar(error); return; }
-      const datos = { nombre: f.nombre.value.trim(), legajo: f.legajo.value.trim() };
+      const datos = { nombre: f.nombre.value.trim(), legajo: limpiarDni(f.legajo.value) };
       if (f.pin.value) datos.pin = await sha256("pin:" + f.pin.value);
       if (nuevo) {
         Datos.estado.usuarios.push({ id: "u-cap-" + uuid().slice(0, 8), rol: "capataz", activo: true, zonas: Datos.estado.zonas.map((z) => z.id), ...datos });
