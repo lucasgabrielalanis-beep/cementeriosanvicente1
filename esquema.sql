@@ -51,7 +51,7 @@ CREATE TYPE tipo_punto_ref     AS ENUM (
   'acceso', 'administracion', 'cruz_mayor', 'rotonda', 'osario', 'memorial',
   'banos', 'deposito_herramientas', 'canilla', 'calle', 'pasaje', 'otro');
 CREATE TYPE tipo_espacio       AS ENUM ('nicho', 'fosa');
-CREATE TYPE tipo_tamano        AS ENUM ('normal', 'extraordinario');
+CREATE TYPE tipo_tamano        AS ENUM ('normal', 'extraordinario', 'angelito');  -- angelito: solo fosas
 CREATE TYPE estado_espacio     AS ENUM (
   'disponible', 'ocupado', 'en_mantenimiento', 'reservado', 'inhabilitado');
 CREATE TYPE tipo_tarea_mant    AS ENUM (
@@ -213,6 +213,7 @@ CREATE TABLE espacios_sepultura (
   CONSTRAINT fosa_ubicacion CHECK (
     tipo_espacio <> 'fosa' OR (numero IS NOT NULL AND (cuadro IS NOT NULL OR fila IS NOT NULL))),
   CONSTRAINT cuadro_solo_fosas CHECK (cuadro IS NULL OR tipo_espacio = 'fosa'),
+  CONSTRAINT angelito_solo_fosas CHECK (tipo_tamano <> 'angelito' OR tipo_espacio = 'fosa'),
   CONSTRAINT reserva_con_vencimiento CHECK (
     estado <> 'reservado' OR reservado_hasta IS NOT NULL),
   CONSTRAINT inhabilitado_con_motivo CHECK (
@@ -364,7 +365,7 @@ CREATE TABLE operaciones_sepultura (
   espacio_id       BIGINT NOT NULL REFERENCES espacios_sepultura(id),
   espacio_destino_id BIGINT REFERENCES espacios_sepultura(id),  -- traslados
   difunto_id       UUID REFERENCES difuntos(id),
-  expediente       TEXT,                               -- nro. de planilla (antes: expediente / orden)
+  expediente       TEXT,                               -- N° de planilla: la app lo pide siempre (NULL solo en registros viejos)
   -- Trazabilidad obligatoria:
   ejecutada_por    UUID NOT NULL REFERENCES usuarios(id),
   supervisada_por  UUID REFERENCES usuarios(id),
@@ -636,7 +637,7 @@ BEGIN
               r.nivel_alerta, r.tipo_espacio, r.tipo_tamano,
               CASE WHEN r.nivel_alerta = 'critica' THEN 'Faltante crítico: ' ELSE 'Stock bajo: ' END
                 || CASE r.tipo_espacio WHEN 'nicho' THEN 'nichos ' ELSE 'fosas ' END
-                || CASE r.tipo_tamano WHEN 'normal' THEN 'normales' ELSE 'extraordinarias' END
+                || CASE r.tipo_tamano WHEN 'normal' THEN 'normales' WHEN 'angelito' THEN 'de angelitos' ELSE 'extraordinarias' END
                 || ' (' || r.disponibles || ' disponibles)',
               jsonb_build_object('disponibles', r.disponibles, 'umbral_critico', r.umbral_critico,
                                  'umbral_advertencia', r.umbral_advertencia,
@@ -939,6 +940,7 @@ INSERT INTO umbrales_stock (tipo_espacio, tipo_tamano, umbral_advertencia, umbra
   ('nicho', 'normal',         200, 50, 30),
   ('nicho', 'extraordinario',  40, 10, 30),
   ('fosa',  'normal',         150, 40, 30),
-  ('fosa',  'extraordinario',  30,  8, 30);
+  ('fosa',  'extraordinario',  30,  8, 30),
+  ('fosa',  'angelito',        20,  5, 30);
 
 COMMIT;

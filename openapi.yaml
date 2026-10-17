@@ -255,10 +255,9 @@ paths:
               version_espacio: 4
               difunto:
                 apellido_nombre: 'Rodríguez, Ana María'
-                dni: '12345678'
                 fecha_defuncion: '2026-11-11'
                 acta_defuncion: 'A-2026-118823'
-              expediente: 'EXP-CEM-2026-004512'
+              expediente: 'PL-004512'
               supervisada_por: 7c1e2b9a-0000-4000-8000-000000000001
               realizada_en: '2026-11-12T10:40:00-03:00'
               ubicacion: { lat: -31.45231, lng: -64.22087, precision_m: 4 }
@@ -466,7 +465,7 @@ components:
   schemas:
     ColorSemaforo: { type: string, enum: [verde, amarillo, rojo_critico] }
     TipoEspacio:   { type: string, enum: [nicho, fosa] }
-    TipoTamano:    { type: string, enum: [normal, extraordinario] }
+    TipoTamano:    { type: string, enum: [normal, extraordinario, angelito], description: 'angelito: solo fosas' }
     EstadoEspacio: { type: string, enum: [disponible, ocupado, en_mantenimiento, reservado, inhabilitado] }
     NivelAlerta:   { type: string, enum: [info, advertencia, critica] }
     TipoTarea:
@@ -636,7 +635,7 @@ components:
 
     DescargaRequest:
       type: object
-      required: [espacio_id, version_espacio, difunto, realizada_en, ubicacion, firma]
+      required: [espacio_id, version_espacio, difunto, expediente, realizada_en, ubicacion, firma]
       properties:
         espacio_id: { type: integer }
         version_espacio: { type: integer, description: 'Versión leída; si cambió, 409 (control optimista)' }
@@ -645,10 +644,9 @@ components:
           required: [apellido_nombre, fecha_defuncion]
           properties:
             apellido_nombre: { type: string }
-            dni: { type: string }
             fecha_defuncion: { type: string, format: date }
             acta_defuncion: { type: string }
-        expediente: { type: string }
+        expediente: { type: string, description: 'N° de planilla (obligatorio)' }
         supervisada_por: { type: string, format: uuid, nullable: true }
         realizada_en: { type: string, format: date-time }
         ubicacion: { $ref: '#/components/schemas/Coordenadas' }
@@ -657,7 +655,7 @@ components:
 
     LiberacionRequest:
       type: object
-      required: [espacio_id, difunto, destino, realizada_en, ubicacion, firma]
+      required: [espacio_id, difunto, destino, expediente, realizada_en, ubicacion, firma]
       properties:
         espacio_id: { type: integer }
         difunto:
@@ -665,10 +663,9 @@ components:
           required: [apellido_nombre]
           properties:
             apellido_nombre: { type: string }
-            dni: { type: string }
             fecha_defuncion: { type: string, format: date }
         destino: { type: string, enum: [Osario, Cremación, Reducción, Traslado a otro lugar del cementerio, Traslado a otro cementerio, Otro] }
-        expediente: { type: string }
+        expediente: { type: string, description: 'N° de planilla (obligatorio)' }
         realizada_en: { type: string, format: date-time }
         ubicacion: { $ref: '#/components/schemas/Coordenadas' }
         observaciones: { type: string, nullable: true }

@@ -22,7 +22,7 @@ const CLAVE_DATOS = "cementerio-sv-demo-v5";
 const CLAVE_SESION = "cementerio-sv-sesion";
 // Versión publicada. Tiene que coincidir con version.json: si el servidor tiene una más nueva,
 // la app avisa para recargar (así nadie usa una versión vieja guardada en el celular).
-const VERSION_APP = "2026-10-17.4";
+const VERSION_APP = "2026-10-17.5";
 const ZONA_HORARIA = "America/Argentina/Cordoba";
 const PIN_DEMO = "1234";
 const DIA = 86400000;
@@ -46,9 +46,10 @@ const COLORES = { verde: "Verde", amarillo: "Amarillo", rojo_critico: "Rojo crí
 const ORDEN_COLOR = { verde: 0, amarillo: 1, rojo_critico: 2 };
 const TIPOS_ZONA = { parque_fosas: "Fosas", nichos: "Nichos", mixta: "Mixta", especial: "Especial" };
 const STOCK_CLAVES = [
-  ["nicho", "normal"], ["nicho", "extraordinario"], ["fosa", "normal"], ["fosa", "extraordinario"],
+  ["nicho", "normal"], ["nicho", "extraordinario"], ["fosa", "normal"], ["fosa", "extraordinario"], ["fosa", "angelito"],
 ];
-const nombreStock = (tipo, tam) =>
+// Las fosas de angelitos (para niños) son un tamaño aparte, solo de fosas (pedido del dueño).
+const nombreStock = (tipo, tam) => tam === "angelito" ? "Fosas de angelitos" :
   (tipo === "nicho" ? "Nichos " : "Fosas ") +
   (tam === "normal" ? "normales" : tipo === "nicho" ? "extraordinarios" : "extraordinarias");
 
@@ -129,6 +130,7 @@ async function datosIniciales() {
   const objetivo = { // disponibles, reservados, en mantenimiento, inhabilitados, ocupados históricos
     "nicho|normal": [180, 6, 14, 3, 11230], "nicho|extraordinario": [9, 2, 3, 1, 1840],
     "fosa|normal": [320, 4, 10, 2, 15410], "fosa|extraordinario": [26, 1, 2, 0, 2210],
+    ...OBJETIVO_ANGELITOS,
   };
   const espacios = [];
   const ocupadosBase = {};
@@ -147,7 +149,7 @@ async function datosIniciales() {
   numerarEspacios(espacios, zonas);
 
   return {
-    version: 12,
+    version: 13,
     creado: new Date(ahora).toISOString(),
     usuarios, zonas, reglas,
     temporada: { desde: "11-01", hasta: "03-31", factor: 0.6 },
@@ -156,8 +158,9 @@ async function datosIniciales() {
       "nicho|extraordinario": { adv: 40, crit: 10, cobertura: 30 },
       "fosa|normal": { adv: 150, crit: 40, cobertura: 30 },
       "fosa|extraordinario": { adv: 30, crit: 8, cobertura: 30 },
+      "fosa|angelito": { ...UMBRAL_ANGELITOS },
     },
-    consumoBase90: { "nicho|normal": 270, "nicho|extraordinario": 50, "fosa|normal": 360, "fosa|extraordinario": 30 },
+    consumoBase90: { "nicho|normal": 270, "nicho|extraordinario": 50, "fosa|normal": 360, "fosa|extraordinario": 30, "fosa|angelito": CONSUMO_ANGELITOS },
     ocupadosBase, espacios,
     registros: [], dispositivos: {}, alertasVistas: {},
   };
@@ -205,7 +208,12 @@ function numerarEspacios(espacios, zonas) {
     });
   }
 }
-const nombreTamano = (e) => (e.tam === "normal" ? "" : e.tipo === "nicho" ? "Extraordinario" : "Extraordinaria");
+// Fosas de angelitos: datos de ejemplo (disponibles, reservados, en mantenimiento, inhabilitados, ocupados históricos).
+const OBJETIVO_ANGELITOS = { "fosa|angelito": [35, 1, 3, 0, 1650] };
+const UMBRAL_ANGELITOS = { adv: 20, crit: 5, cobertura: 30 };
+const CONSUMO_ANGELITOS = 18;
+const nombreTamano = (e) => (e.tam === "normal" ? "" : e.tam === "angelito" ? "Angelito" : e.tipo === "nicho" ? "Extraordinario" : "Extraordinaria");
+const chipTamano = (e) => `<span class="chip ${e.tam === "angelito" ? "angelito" : "critica"}">${nombreTamano(e)}</span>`;
 function range(a, b) { return Array.from({ length: b - a + 1 }, (_, i) => a + i); }
 
 /* ───────────────────────── Capa de datos (demo: localStorage) ───────────────────────── */
@@ -225,6 +233,27 @@ const Datos = {
       numerarEspacios(this.estado.espacios, this.estado.zonas);
       this.estado.version = 12; this.guardar();
     }
+    if (this.estado?.version === 12) { // se agregan las fosas de angelitos (con lugares de ejemplo)
+      const e = this.estado;
+      e.umbrales["fosa|angelito"] ||= { ...UMBRAL_ANGELITOS };
+      e.consumoBase90["fosa|angelito"] ??= CONSUMO_ANGELITOS;
+      const [disp, res, mant, inh, ocup] = OBJETIVO_ANGELITOS["fosa|angelito"];
+      e.ocupadosBase["fosa|angelito"] ??= ocup;
+      const zonasFosa = e.zonas.filter((z) => z.tipo === "parque_fosas");
+      let id = Math.max(0, ...e.espacios.map((x) => Number(x.id) || 0)) + 1;
+      const nuevos = [...Array(disp).fill("disponible"), ...Array(res).fill("reservado"), ...Array(mant).fill("en_mantenimiento"), ...Array(inh).fill("inhabilitado")]
+        .map((estado, i) => ({ id: id + i, zona: zonasFosa[(i * 7) % zonasFosa.length].id, tipo: "fosa", tam: "angelito", estado }));
+      // Se numeran aparte para no cambiar el número de los lugares que ya existen; sin repetir uno ocupado.
+      const usados = new Set(e.espacios.filter((x) => x.tipo === "fosa").map((x) => [x.zona, x.cuadro ?? 0, x.numero].join("|")));
+      numerarEspacios(nuevos, e.zonas);
+      for (const x of nuevos) {
+        while (usados.has([x.zona, x.cuadro ?? 0, x.numero].join("|"))) x.numero += 500;
+        usados.add([x.zona, x.cuadro ?? 0, x.numero].join("|"));
+        x.ub = x.cuadro ? `Cuadro ${x.cuadro} · Fosa ${x.numero}` : `Fosa N° ${x.numero}`;
+      }
+      e.espacios.push(...nuevos);
+      e.version = 13; this.guardar();
+    }
     const capB = this.estado?.usuarios?.find((u) => u.id === "u-cap-b");
     if (capB) { // queda un solo capataz para ingresar: hereda las zonas del Capataz B
       const capA = this.estado.usuarios.find((u) => u.id === "u-cap-a");
@@ -241,7 +270,7 @@ const Datos = {
       for (const u of this.estado.usuarios) if (u.nombre === "Directivo (demo)") u.nombre = "Director (demo)";
       this.guardar();
     }
-    if (!this.estado || this.estado.version !== 12) { this.estado = await datosIniciales(); this.guardar(); }
+    if (!this.estado || this.estado.version !== 13) { this.estado = await datosIniciales(); this.guardar(); }
     return this.estado;
   },
   guardar(silencioso = false) {
@@ -476,7 +505,7 @@ async function verificarCadena() {
 }
 
 /* ───────────────────────── Interfaz: infraestructura ───────────────────────── */
-const UI = { usuario: null, pestana: null, filtroColor: "todas", borrador: null, fotos: [], filtroDisp: { tipo: "todos", extra: false } };
+const UI = { usuario: null, pestana: null, filtroColor: "todas", borrador: null, fotos: [], filtroDisp: { tipo: "todos", extra: "" } };
 
 function avisar(texto) {
   const t = $("#toast");
@@ -579,7 +608,7 @@ function tarjetaStock(s) {
 function seccionDondeHayLugar() {
   const f = UI.filtroDisp;
   const libres = Datos.estado.espacios.filter((e) => e.estado === "disponible" &&
-    (f.tipo === "todos" || e.tipo === f.tipo) && (!f.extra || e.tam === "extraordinario"));
+    (f.tipo === "todos" || e.tipo === f.tipo) && (!f.extra || e.tam === f.extra));
   const porZona = new Map();
   for (const z of Datos.estado.zonas) porZona.set(z.id, []);
   for (const e of libres) porZona.get(e.zona)?.push(e);
@@ -588,19 +617,21 @@ function seccionDondeHayLugar() {
   const bloques = [...porZona].filter(([, l]) => l.length).map(([id, lista]) => {
     lista.sort((a, b) => a.tipo.localeCompare(b.tipo) || a.numero - b.numero);
     const fosas = lista.filter((e) => e.tipo === "fosa").length, nichos = lista.length - fosas;
-    const extra = lista.filter((e) => e.tam === "extraordinario").length;
+    const extra = lista.filter((e) => e.tam === "extraordinario").length, angelitos = lista.filter((e) => e.tam === "angelito").length;
     const sinPalabraNicho = Datos.estado.zonas.find((z) => z.id === id)?.codigo === "SV_NICHOS";
     const resumen = [fosas && plural(fosas, "fosa", "fosas"), nichos && (sinPalabraNicho ? plural(nichos, "lugar", "lugares") : plural(nichos, "nicho", "nichos"))].filter(Boolean).join(" y ") +
-      (extra ? ` · <span class="chip critica" style="font-size:.75rem">${extra} extraordinari${extra === 1 ? (fosas && !nichos ? "a" : "o") : (fosas && !nichos ? "as" : "os")}</span>` : "");
+      (extra ? ` · <span class="chip critica" style="font-size:.75rem">${extra} extraordinari${extra === 1 ? (fosas && !nichos ? "a" : "o") : (fosas && !nichos ? "as" : "os")}</span>` : "") +
+      (angelitos ? ` · <span class="chip angelito" style="font-size:.75rem">${plural(angelitos, "de angelito", "de angelitos")}</span>` : "");
     return `<details class="card lugar"${f.extra || lista.length <= 6 ? " open" : ""}>
       <summary><strong>${esc(nombreZona(id))}</strong> <span class="muted">— ${resumen}</span></summary>
-      <ul class="espacios-libres">${lista.map((e) => `<li class="${e.tam === "extraordinario" ? "extra" : ""}">${esc(e.ub)}${e.tam === "extraordinario" ? ` <strong>· ${nombreTamano(e)}</strong>` : ""}${e.liberado_en ? ` · <em>liberado ${fmtDia(e.liberado_en)}</em>` : ""}</li>`).join("")}</ul>
+      <ul class="espacios-libres">${lista.map((e) => `<li class="${e.tam === "extraordinario" ? "extra" : e.tam === "angelito" ? "angelito" : ""}">${esc(e.ub)}${e.tam !== "normal" ? ` <strong>· ${nombreTamano(e)}</strong>` : ""}${e.liberado_en ? ` · <em>liberado ${fmtDia(e.liberado_en)}</em>` : ""}</li>`).join("")}</ul>
     </details>`;
   });
   return `<h2 id="donde-hay-lugar">¿Dónde hay lugar?</h2>
-    <p class="muted">Nichos y fosas libres, por zona, con su número. Los extraordinarios están marcados.</p>
+    <p class="muted">Nichos y fosas libres, por zona, con su número. Los extraordinarios y las fosas de angelitos están marcados.</p>
     <div class="fila" style="margin-bottom:8px">${btn("todos", "Todos")}${btn("fosa", "Fosas")}${btn("nicho", "Nichos")}
-      <label class="fila" style="font-weight:500;gap:6px;margin-left:4px"><input type="checkbox" data-filtro-extra ${f.extra ? "checked" : ""} style="width:22px;min-height:22px"> Solo extraordinarios</label></div>
+      <label class="fila" style="font-weight:500;gap:6px;margin-left:4px">Tamaño <select data-filtro-extra style="width:auto">
+        <option value="">Todos</option><option value="extraordinario" ${f.extra === "extraordinario" ? "selected" : ""}>Solo extraordinarios</option><option value="angelito" ${f.extra === "angelito" ? "selected" : ""}>Solo angelitos</option></select></label></div>
     <p class="chico"><strong>${plural(libres.length, "lugar libre", "lugares libres")}</strong> en ${plural(bloques.length, "zona", "zonas")}.</p>
     <div class="lista-lugares">${bloques.join("") || '<div class="card vacio">No hay lugares libres con ese filtro.</div>'}</div>`;
 }
@@ -616,7 +647,7 @@ function abrirListado() {
   const filas = lista.map((e) => `<tr>
       <td>${esc(nombreZona(e.zona))}</td>
       ${esFosa ? `<td>${e.cuadro ?? "—"}</td><td><strong>${e.numero}</strong></td>` : `<td>${esc(e.lugar || "—")}</td><td>${e.fila ?? "—"}</td><td><strong>${e.numero}</strong></td>`}
-      <td>${e.tam === "extraordinario" ? `<span class="chip critica">${nombreTamano(e)}</span>` : "Normal"}${e.liberado_en ? `<br><span class="chip ok">Liberado ${fmtDia(e.liberado_en)}</span>` : ""}</td></tr>`).join("");
+      <td>${e.tam !== "normal" ? chipTamano(e) : "Normal"}${e.liberado_en ? `<br><span class="chip ok">Liberado ${fmtDia(e.liberado_en)}</span>` : ""}</td></tr>`).join("");
   abrirModal(`<h2 style="margin-top:0">${nombreStock(tipo, tam)} disponibles</h2>
     <p><strong>${lista.length}</strong> ${lista.length === 1 ? "lugar libre" : "lugares libres"}${zona ? " en " + esc(nombreZona(Number(zona))) : ` en ${zonasCon.length} ${zonasCon.length === 1 ? "zona" : "zonas"}`}.</p>
     <label style="margin-bottom:12px">Zona<select data-listado-zona>
@@ -975,7 +1006,7 @@ function seccionLiberados() {
     .filter((e) => e.estado === "disponible" && e.liberado_en && new Date(e.liberado_en) >= desde)
     .sort((a, b) => b.liberado_en.localeCompare(a.liberado_en));
   if (!lista.length) return "";
-  const tipoTxt = (e) => (e.tipo === "nicho" ? "Nicho" : "Fosa") + (e.tam === "extraordinario" ? " " + nombreTamano(e).toLowerCase() : "");
+  const tipoTxt = (e) => (e.tipo === "nicho" ? "Nicho" : "Fosa") + (e.tam === "angelito" ? " de angelito" : e.tam === "extraordinario" ? " " + nombreTamano(e).toLowerCase() : "");
   return `<h2 id="liberados">Lugares liberados (disponibles)</h2>
     <p class="muted chico">Quedaron libres por una descarga o exhumación firmada y ya cuentan como disponibles.</p>
     <div class="lista-alertas">${lista.slice(0, 20).map((e) => `<div class="card alerta liberado">
@@ -1137,6 +1168,7 @@ function vistaOperacion(modo) {
   const tipos = OPERACIONES[modo].tipos;
   const b = UI.borrador?.accion === modo ? { ...UI.borrador } : { tipo: tipos[0], tam: "normal", zona: "" };
   if (!tipos.includes(b.tipo)) b.tipo = tipos[0];
+  if (b.tam === "angelito" && b.tipo !== "fosa") b.tam = "normal"; // angelitos: solo fosas
   const queLugar = tipos.length === 2 ? "el nicho o la fosa" : tipos[0] === "nicho" ? "el nicho" : "la fosa";
   UI.filtroDescarga = { tipo: b.tipo, tam: b.tam, zona: b.zona, planta: "", lugar: "", cuadro: "", fila: "" };
   const op = (campo, valor, txt) => `<button type="button" class="opcion" data-elegir="${campo}" data-valor="${valor}" aria-pressed="${b[campo] === valor}">${txt}</button>`;
@@ -1148,7 +1180,7 @@ function vistaOperacion(modo) {
         <fieldset style="border:0;padding:0;margin:0"><legend style="font-weight:600;margin-bottom:6px">Tipo</legend>
           <div class="opciones">${tipos.length === 2 ? op("tipo", "nicho", "Nicho") + op("tipo", "fosa", "Fosa") : `<span class="opcion" aria-pressed="true" style="cursor:default">${tipos[0] === "nicho" ? "Nicho" : "Fosa"}</span>`}</div></fieldset>
         <fieldset style="border:0;padding:0;margin:0"><legend style="font-weight:600;margin-bottom:6px">Tamaño</legend>
-          <div class="opciones">${op("tam", "normal", "Normal")}${op("tam", "extraordinario", "Extraordinario")}</div></fieldset>
+          <div class="opciones">${op("tam", "normal", "Normal")}${op("tam", "extraordinario", "Extraordinario")}${tipos.includes("fosa") ? op("tam", "angelito", "Angelito").replace("<button", `<button${b.tipo === "fosa" ? "" : " hidden"}`) : ""}</div></fieldset>
       </div>
       <input type="hidden" name="tipo" value="${b.tipo}"><input type="hidden" name="tam" value="${b.tam}">
       <label>Zona<select name="zona" data-filtro-zona><option value="">Todas las zonas</option></select></label>
@@ -1163,13 +1195,10 @@ function vistaOperacion(modo) {
       </div>
       <h2 style="margin:4px 0 0">${exh ? "Datos de la persona (restos retirados)" : "Datos de la persona fallecida"}</h2>
       <label>Apellido y nombre<input name="dif_nombre" required maxlength="120" autocomplete="off"></label>
-      <div class="dos-col">
-        <label>DNI <span class="muted">(opcional)</span><input name="dif_dni" inputmode="numeric" maxlength="12" autocomplete="off"></label>
-        <label>Fecha de fallecimiento${exh ? ' <span class="muted">(opcional)</span>' : ""}<input name="dif_fecha" type="date" ${exh ? "" : "required"}></label>
-      </div>
+      <label>Fecha de fallecimiento${exh ? ' <span class="muted">(opcional)</span>' : ""}<input name="dif_fecha" type="date" ${exh ? "" : "required"}></label>
       ${exh ? `<label>Destino de los restos<select name="destino" required>
         <option value="">Elegí el destino</option>${DESTINOS_EXHUMACION.map((d) => `<option>${d}</option>`).join("")}</select></label>` : ""}
-      <label>N° de planilla <span class="muted">(opcional)</span><input name="expediente" maxlength="60" autocomplete="off"></label>
+      <label>N° de planilla<input name="expediente" required maxlength="60" autocomplete="off"></label>
       <label>Observaciones <span class="muted">(opcional)</span><textarea name="observaciones" maxlength="600"></textarea></label>
       <button class="btn grande" type="submit">Continuar a la firma</button>
     </form>`;
@@ -1239,7 +1268,7 @@ function actualizarListaEspacios() {
     ? `${f.fila ? "" : `Fila ${e.fila} · `}N° ${e.numero}${f.planta || !e.planta ? "" : ` · ${PLANTAS[e.planta - 1]}`}${f.lugar || !e.lugar || e.planta ? "" : ` · ${esc(e.lugar)}`}`
     : `${e.cuadro && !f.cuadro ? `Cuadro ${e.cuadro} · ` : ""}Fosa ${e.numero}`;
   $("#sugeridos").innerHTML = f.zona
-    ? sugeridos.map((e) => `<li><button type="button" class="enlace" data-sugerido="${e.id}">${textoSugerido(e)}${e.tam === "extraordinario" ? " · " + nombreTamano(e) : ""}</button></li>`).join("") || `<li class="muted">No hay ${palabra} registrados acá. Igual podés cargar el número a mano.</li>`
+    ? sugeridos.map((e) => `<li><button type="button" class="enlace" data-sugerido="${e.id}">${textoSugerido(e)}${e.tam !== "normal" ? " · " + nombreTamano(e) : ""}</button></li>`).join("") || `<li class="muted">No hay ${palabra} registrados acá. Igual podés cargar el número a mano.</li>`
     : '<li class="muted">Elegí primero la zona.</li>';
 }
 
@@ -1387,6 +1416,16 @@ document.addEventListener("click", async (ev) => {
     const form = el.closest("form");
     form.querySelectorAll(`[data-elegir="${d.elegir}"]`).forEach((b) => b.setAttribute("aria-pressed", String(b === el)));
     form.elements[d.elegir].value = d.valor;
+    if (d.elegir === "tipo") { // el tamaño "Angelito" es solo de fosas
+      const ang = form.querySelector('[data-elegir="tam"][data-valor="angelito"]');
+      if (ang) {
+        ang.hidden = d.valor !== "fosa";
+        if (ang.hidden && form.elements.tam.value === "angelito") {
+          form.elements.tam.value = "normal"; UI.filtroDescarga.tam = "normal";
+          form.querySelectorAll('[data-elegir="tam"]').forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.valor === "normal")));
+        }
+      }
+    }
     if (OPERACIONES[form.dataset.form]) { Object.assign(UI.filtroDescarga, { [d.elegir]: d.valor, planta: "", lugar: "", cuadro: "", fila: "" }); actualizarListaEspacios(); }
     return;
   }
@@ -1425,7 +1464,7 @@ document.addEventListener("change", async (ev) => {
   }
   if (ev.target.matches("[data-listado-zona]")) { UI.listado.zona = ev.target.value; abrirListado(); return; }
   if (ev.target.matches("[data-elegir-dia]")) { if (ev.target.value) { UI.diaInforme = ev.target.value; render(); } return; }
-  if (ev.target.matches("[data-filtro-extra]")) { UI.filtroDisp.extra = ev.target.checked; render(); return; }
+  if (ev.target.matches("[data-filtro-extra]")) { UI.filtroDisp.extra = ev.target.value; render(); return; }
   if (ev.target.matches("[data-filtro-zona]")) { Object.assign(UI.filtroDescarga, { zona: ev.target.value, planta: "", lugar: "", cuadro: "", fila: "" }); actualizarListaEspacios(); }
   if (ev.target.matches("[data-filtro-lugar]")) { Object.assign(UI.filtroDescarga, { lugar: ev.target.value, fila: "" }); actualizarListaEspacios(); }
   if (ev.target.matches("[data-filtro-fila]")) { UI.filtroDescarga.fila = ev.target.value; actualizarListaEspacios(); }
@@ -1455,6 +1494,7 @@ document.addEventListener("submit", async (ev) => {
     } else if (OPERACIONES[tipoForm]) {
       const exh = OPERACIONES[tipoForm].libera;
       if (!OPERACIONES[tipoForm].tipos.includes(f.tipo.value)) { avisar(`${OPERACIONES[tipoForm].nombre}: solo ${OPERACIONES[tipoForm].tipos.map((t) => t + "s").join(" o ")}.`); return; }
+      if (f.tam.value === "angelito" && f.tipo.value !== "fosa") { avisar("Las de angelitos son solo fosas."); return; }
       let esp, altaManual = false;
       const fd = UI.filtroDescarga;
       const zona = Datos.estado.zonas.find((z) => z.id === Number(fd.zona));
@@ -1502,12 +1542,13 @@ document.addEventListener("submit", async (ev) => {
           esp.ub = cuadro ? `Cuadro ${cuadro} · Fosa ${num}` : `Fosa N° ${num}`;
         }
       }
+      if (!f.expediente.value.trim()) { avisar("Escribí el N° de planilla."); f.expediente.focus(); return; }
       const datos = {
         espacio_id: esp.id, ubicacion: esp.ub, zona: esp.zona, tipo: esp.tipo, tam: esp.tam,
         planta: esp.planta, cuadro: esp.cuadro, lugar: esp.tipo === "nicho" ? esp.lugar : undefined, fila: esp.fila, numero: esp.numero,
         alta_manual: altaManual || undefined,
-        difunto: { nombre: f.dif_nombre.value.trim(), dni: f.dif_dni.value.trim() || undefined, fecha: f.dif_fecha.value },
-        expediente: f.expediente.value.trim() || undefined, observaciones: f.observaciones.value.trim() || undefined,
+        difunto: { nombre: f.dif_nombre.value.trim(), fecha: f.dif_fecha.value },
+        expediente: f.expediente.value.trim(), observaciones: f.observaciones.value.trim() || undefined,
       };
       if (exh) {
         if (!f.destino.value) { avisar("Elegí el destino de los restos."); return; }
@@ -1515,7 +1556,7 @@ document.addEventListener("submit", async (ev) => {
         if (!datos.difunto.fecha) delete datos.difunto.fecha;
       }
       UI.borrador = { accion: tipoForm, tipo: esp.tipo, tam: esp.tam, zona: UI.filtroDescarga.zona };
-      abrirFirma(OPERACIONES[tipoForm].accion, datos, `<dt>Zona</dt><dd>${esc(nombreZona(esp.zona))}</dd>${esp.planta ? `<dt>Planta</dt><dd>${PLANTAS[esp.planta - 1]}</dd>` : ""}<dt>Espacio</dt><dd>${esc(esp.ub)}${esp.tam === "extraordinario" ? " · <strong>" + nombreTamano(esp) + "</strong>" : ""}${altaManual ? `<br><span class="muted chico">Cargado a mano: no figuraba en la lista de ${exh ? "ocupados" : "libres"}, se agrega al registro.</span>` : ""}</dd><dt>${exh ? "Persona" : "Difunto"}</dt><dd>${esc(datos.difunto.nombre)}${datos.difunto.dni ? " · DNI " + esc(datos.difunto.dni) : ""}</dd>${exh ? `<dt>Destino</dt><dd>${esc(datos.destino)}</dd><dt>Resultado</dt><dd><strong>El lugar queda libre y disponible.</strong></dd>` : ""}`);
+      abrirFirma(OPERACIONES[tipoForm].accion, datos, `<dt>Zona</dt><dd>${esc(nombreZona(esp.zona))}</dd>${esp.planta ? `<dt>Planta</dt><dd>${PLANTAS[esp.planta - 1]}</dd>` : ""}<dt>Espacio</dt><dd>${esc(esp.ub)}${esp.tam !== "normal" ? " · <strong>" + nombreTamano(esp) + "</strong>" : ""}${altaManual ? `<br><span class="muted chico">Cargado a mano: no figuraba en la lista de ${exh ? "ocupados" : "libres"}, se agrega al registro.</span>` : ""}</dd><dt>${exh ? "Persona" : "Difunto"}</dt><dd>${esc(datos.difunto.nombre)}</dd><dt>N° de planilla</dt><dd>${esc(datos.expediente)}</dd>${exh ? `<dt>Destino</dt><dd>${esc(datos.destino)}</dd><dt>Resultado</dt><dd><strong>El lugar queda libre y disponible.</strong></dd>` : ""}`);
     } else if (tipoForm === "firma") {
       const c = $("#lienzo");
       if (!c.trazos) { avisar("Falta tu firma en el recuadro."); return; }
