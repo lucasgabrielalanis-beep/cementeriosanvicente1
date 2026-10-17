@@ -22,7 +22,7 @@ const CLAVE_DATOS = "cementerio-sv-demo-v5";
 const CLAVE_SESION = "cementerio-sv-sesion";
 // Versión publicada. Tiene que coincidir con version.json: si el servidor tiene una más nueva,
 // la app avisa para recargar (así nadie usa una versión vieja guardada en el celular).
-const VERSION_APP = "2026-10-17.3";
+const VERSION_APP = "2026-10-17.4";
 const ZONA_HORARIA = "America/Argentina/Cordoba";
 const PIN_DEMO = "1234";
 const DIA = 86400000;
@@ -1030,7 +1030,7 @@ function detalleRegistro(sec) {
     <div class="resumen-firma"><dl>
       <dt>Qué</dt><dd>${descripcionRegistro(r)}</dd>
       ${p.datos.observaciones ? `<dt>Observaciones</dt><dd>${esc(p.datos.observaciones)}</dd>` : ""}
-      ${p.datos.difunto ? `<dt>${ACCIONES_LIBERAN.includes(p.accion) ? "Persona" : "Difunto"}</dt><dd>${esc(p.datos.difunto.nombre)}${p.datos.difunto.dni ? " · DNI " + esc(p.datos.difunto.dni) : ""}${p.datos.difunto.fecha ? " · fallecimiento " + esc(p.datos.difunto.fecha) : ""}</dd>${p.datos.destino ? `<dt>Destino</dt><dd>${esc(p.datos.destino)}</dd>` : ""}<dt>Expediente</dt><dd>${esc(p.datos.expediente || "—")}</dd>` : ""}
+      ${p.datos.difunto ? `<dt>${ACCIONES_LIBERAN.includes(p.accion) ? "Persona" : "Difunto"}</dt><dd>${esc(p.datos.difunto.nombre)}${p.datos.difunto.dni ? " · DNI " + esc(p.datos.difunto.dni) : ""}${p.datos.difunto.fecha ? " · fallecimiento " + esc(p.datos.difunto.fecha) : ""}</dd>${p.datos.destino ? `<dt>Destino</dt><dd>${esc(p.datos.destino)}</dd>` : ""}<dt>N° de planilla</dt><dd>${esc(p.datos.expediente || "—")}</dd>` : ""}
       <dt>Quién</dt><dd>${esc(p.usuario.nombre)} · legajo ${esc(p.usuario.legajo)}</dd>
       <dt>Hora de registro</dt><dd>${fmtFecha(r.registrado_en)}</dd>
       <dt>Hora del celular</dt><dd>${fmtFecha(p.hora_dispositivo)}</dd>
@@ -1169,7 +1169,7 @@ function vistaOperacion(modo) {
       </div>
       ${exh ? `<label>Destino de los restos<select name="destino" required>
         <option value="">Elegí el destino</option>${DESTINOS_EXHUMACION.map((d) => `<option>${d}</option>`).join("")}</select></label>` : ""}
-      <label>N° de expediente u orden <span class="muted">(opcional)</span><input name="expediente" maxlength="60" autocomplete="off"></label>
+      <label>N° de planilla <span class="muted">(opcional)</span><input name="expediente" maxlength="60" autocomplete="off"></label>
       <label>Observaciones <span class="muted">(opcional)</span><textarea name="observaciones" maxlength="600"></textarea></label>
       <button class="btn grande" type="submit">Continuar a la firma</button>
     </form>`;
