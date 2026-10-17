@@ -84,9 +84,9 @@ CREATE TYPE tipo_alerta        AS ENUM (
 -- 2. Usuarios, roles y dispositivos -------------------------------------------
 CREATE TABLE usuarios (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  legajo           TEXT UNIQUE NOT NULL,               -- legajo municipal
+  legajo           TEXT UNIQUE,                        -- legajo municipal (opcional)
   nombre_completo  TEXT NOT NULL,
-  dni              TEXT UNIQUE,
+  dni              TEXT UNIQUE NOT NULL CHECK (dni ~ '^[0-9]{7,8}$'),  -- identifica a cada persona (sin puntos)
   email            CITEXT UNIQUE,
   rol              rol_usuario NOT NULL,
   pin_hash         TEXT,                               -- bcrypt/argon2; nunca el PIN en claro

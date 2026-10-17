@@ -219,7 +219,7 @@ paths:
               example:
                 tarea_id: 2705abcb-4c50-42ca-b02f-35b887811bc4
                 estado: completada
-                ejecutada_por: { id: 9b0f..., nombre: 'Gómez, Luis', legajo: '20431' }
+                ejecutada_por: { id: 9b0f..., nombre: 'Gómez, Luis', dni: '30123456' }
                 completada_en: '2026-11-12T09:12:51-03:00'
                 firma: { id: 5e1d..., secuencia: 10432, hash_registro: 'c41b...', verificada: true }
                 semaforo_zona: { zona_id: 5, color_anterior: rojo_critico, color_actual: verde }
@@ -282,7 +282,7 @@ paths:
                 operacion_id: 0c9a...
                 tipo_operacion: inhumacion
                 espacio: { id: 18234, codigo: N-5-B-3-41, estado: ocupado, version: 5 }
-                ejecutada_por: { id: 9b0f..., nombre: 'Gómez, Luis', legajo: '20431' }
+                ejecutada_por: { id: 9b0f..., nombre: 'Gómez, Luis', dni: '30123456' }
                 realizada_en: '2026-11-12T10:40:00-03:00'
                 registrada_en: '2026-11-12T10:40:15-03:00'
                 firma: { id: 77aa..., secuencia: 10433, hash_registro: '8d02...', verificada: true }
@@ -582,7 +582,8 @@ components:
       properties:
         id: { type: string, format: uuid }
         nombre: { type: string }
-        legajo: { type: string }
+        dni: { type: string, description: 'Identifica a cada persona (7 u 8 números)' }
+        legajo: { type: string, nullable: true }
 
     FirmaRequest:
       type: object
