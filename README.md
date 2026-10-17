@@ -90,7 +90,7 @@ erDiagram
 | `puntos_referencia` | Ingresos (Calle Soto y Calle Martin Cartechini), Administración, Cruz Mayor, Rotonda, Baños… para orientarse en campo. |
 | (Pabellón Amarillo) | Los nichos tienen `planta`: 1 = primera, 2 = segunda, 3 = tercera planta. |
 | `bloques_seccion` | Plano de la Sección Vieja (sector de nichos): sector, cuadro (letra), bloque y "Prop.". Las calles y pasajes de esa sección van en `puntos_referencia`. |
-| `espacios_sepultura` | Nichos (pabellón/nivel/columna) y fosas (zonas 1–30: zona, cuadro 1–40 y fosa; secciones: sección/fila/número); tamaño `normal`/`extraordinario`; estado; `version` para concurrencia. |
+| `espacios_sepultura` | Nichos (pabellón/nivel/columna) y fosas (zonas 1–30: zona, cuadro 1–40 y fosa; secciones: sección/fila/número); tamaño `normal`/`extraordinario`/`angelito` (angelito: solo fosas); estado; `version` para concurrencia. |
 | `firmas_digitales` | Una por acción de campo: quién, cuándo (cliente + servidor), qué (hash), dónde (GPS), con qué dispositivo; encadenada por hash. **Inmutable.** |
 | `mantenimiento_tareas` | Corte de césped, limpieza de calles, relleno de fosas, pintura, etc. Fotos opcionales como constancia. No se puede marcar `completada` sin `ejecutada_por`, `completada_en` y `firma_id`. Cerrada = no editable. |
 | `operaciones_sepultura` | Inhumación (ocupa el lugar), descarga y exhumación (lo dejan libre), reducción, traslados… **Inmutable**: se corrige con una operación `anulacion`. |

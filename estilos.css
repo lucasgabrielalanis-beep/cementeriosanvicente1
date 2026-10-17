@@ -15,6 +15,7 @@
   --amarillo-dot: #e0a800;
   --rojo: #b42318;
   --rojo-bg: #fde4e1;
+  --celeste: #2f5d8a; --celeste-bg: #e3eef9;
   --info-bg: #e6eef7;
   --sombra: 0 1px 2px rgba(0,0,0,.06), 0 2px 8px rgba(0,0,0,.04);
   color-scheme: light;
@@ -25,6 +26,7 @@
     --primary: #6fb3c8; --primary-fg: #0d1a1f; --soft: #212b29;
     --verde: #6fcf8f; --verde-bg: #183526; --amarillo: #f3c64f; --amarillo-bg: #3a3014; --amarillo-dot: #f3c64f;
     --rojo: #ff8a7a; --rojo-bg: #3d1a17; --info-bg: #1b2a38; --sombra: none;
+    --celeste: #8fbbe8; --celeste-bg: #1b2a38;
     color-scheme: dark;
   }
 }
@@ -104,6 +106,7 @@ p { margin: .25rem 0 .75rem; }
 .rojo_critico, .critica { color: var(--rojo); background: var(--rojo-bg); }
 .advertencia { color: var(--amarillo); background: var(--amarillo-bg); }
 .info, .ok { color: var(--verde); background: var(--verde-bg); }
+.chip.angelito { color: var(--celeste); background: var(--celeste-bg); }
 
 /* Semáforo de zonas */
 .resumen-semaforo { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
@@ -196,6 +199,7 @@ label.btn { width: fit-content; }
 .espacios-libres { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
 .espacios-libres li { background: var(--soft); border-radius: 8px; padding: 4px 10px; font-size: .9rem; }
 .espacios-libres li.extra { background: var(--rojo-bg); color: var(--rojo); border: 1px solid currentColor; }
+.espacios-libres li.angelito { background: var(--celeste-bg); color: var(--celeste); border: 1px solid currentColor; }
 
 .stock.clicable { cursor: pointer; transition: border-color .15s, transform .15s; }
 .stock.clicable:hover { border-color: var(--primary); }
