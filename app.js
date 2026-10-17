@@ -22,7 +22,7 @@ const CLAVE_DATOS = "cementerio-sv-demo-v5";
 const CLAVE_SESION = "cementerio-sv-sesion";
 // Versión publicada. Tiene que coincidir con version.json: si el servidor tiene una más nueva,
 // la app avisa para recargar (así nadie usa una versión vieja guardada en el celular).
-const VERSION_APP = "2026-10-17.1";
+const VERSION_APP = "2026-10-17.2";
 const ZONA_HORARIA = "America/Argentina/Cordoba";
 const PIN_DEMO = "1234";
 const DIA = 86400000;
@@ -497,7 +497,7 @@ function cerrarModal() {
 
 const PESTANAS = {
   // El informe diario lo ve solo el Director.
-  directivo: [["resumen", "Resumen"], ["informe", "Informe diario"], ["zonas", "Zonas"], ["alertas", "Alertas"], ["registro", "Registro firmado"], ["ajustes", "Ajustes"]],
+  directivo: [["resumen", "Resumen"], ["informe", "Informe diario"], ["capataces", "Capataces"], ["zonas", "Zonas"], ["alertas", "Alertas"], ["registro", "Registro firmado"], ["ajustes", "Ajustes"]],
   // Los tableros (resumen, zonas, alertas, registro) los ven todos; los ajustes, solo directivos.
   // Capataces y operarios arrancan en el mismo Resumen que los directivos.
   campo: [["resumen", "Resumen"], ["zonas", "Zonas"], ["alertas", "Alertas"], ["registro", "Registro firmado"], ["mis-zonas", "Mis zonas"], ["tarea", "Registrar tarea"], ["descarga", "Registrar descarga"], ["exhumacion", "Registrar exhumación"], ["inhumacion", "Registrar inhumación"], ["mis-registros", "Mis registros"]],
@@ -516,7 +516,7 @@ function render() {
   const activa = $("#pestanas [aria-current]");
   $("#pestanas").scrollLeft = activa ? Math.max(0, activa.offsetLeft - 16) : 0;
   const vistas = {
-    resumen: vistaResumen, informe: vistaInforme, zonas: vistaZonas, alertas: vistaAlertas, registro: vistaRegistro, ajustes: vistaAjustes,
+    resumen: vistaResumen, informe: vistaInforme, capataces: vistaCapataces, zonas: vistaZonas, alertas: vistaAlertas, registro: vistaRegistro, ajustes: vistaAjustes,
     "mis-zonas": vistaMisZonas, tarea: vistaTarea, descarga: vistaDescarga, exhumacion: vistaExhumacion, inhumacion: vistaInhumacion, "mis-registros": vistaMisRegistros,
   };
   $("#vista").innerHTML = vistas[UI.pestana]();
@@ -525,10 +525,10 @@ function render() {
 
 /* ───────────────────────── Vistas ───────────────────────── */
 function vistaLogin() {
-  const usuarios = Datos.estado.usuarios;
+  const usuarios = Datos.estado.usuarios.filter((u) => u.activo !== false);
   return `<section class="login">
     <h1>Ingresar</h1>
-    <p class="muted">Elegí un usuario de prueba. El PIN de demostración es <strong>${PIN_DEMO}</strong>.</p>
+    <p class="muted">Elegí tu usuario y escribí tu PIN. <span class="chico">(Usuarios de demostración: PIN <strong>${PIN_DEMO}</strong>.)</span></p>
     <form class="form" data-form="login">
       <div class="usuarios" role="radiogroup" aria-label="Usuario">
         ${usuarios.map((u, i) => `<label class="card usuario"><span><strong>${esc(u.nombre)}</strong><br><span class="muted chico">${u.rol === "directivo" ? "Tablero, alertas y control" : "Campo y tableros · " + u.zonas.length + " zonas asignadas"}</span></span><input type="radio" name="usuario" value="${u.id}" ${i === 0 ? "checked" : ""} style="width:auto;min-height:auto"></label>`).join("")}
@@ -741,6 +741,106 @@ function plantasPabellon(zonaId) {
       <tbody>${PLANTAS.map((nombre, i) => `<tr><td><strong>${nombre}</strong></td><td><strong>${cuenta(i + 1, "disponible")}</strong></td>
         <td>${extra(i + 1)}</td><td>${cuenta(i + 1, "reservado")}</td><td>${cuenta(i + 1, "en_mantenimiento")}</td></tr>`).join("")}</tbody>
     </table></div>`;
+}
+
+/* ───────────────────────── Capataces: ranking y administración (solo Director) ───────────────────────── */
+// Lista (no objeto) para que el orden sea el de acá: las claves "7" y "30" se reordenarían solas en un objeto.
+const PERIODOS = [["hoy", "Hoy"], ["7", "Últimos 7 días"], ["30", "Últimos 30 días"], ["mes", "Este mes"], ["todo", "Todo"]];
+function desdePeriodo(periodo) {
+  const hoy = diaDe(new Date());
+  if (periodo === "hoy") return hoy;
+  if (periodo === "mes") return hoy.slice(0, 8) + "01";
+  if (periodo === "todo") return "0000-00-00";
+  return sumarDias(hoy, -(Number(periodo) - 1));
+}
+
+function rankingCapataces(periodo) {
+  const desde = desdePeriodo(periodo);
+  const capataces = Datos.estado.usuarios.filter((u) => u.rol === "capataz");
+  return capataces.map((u) => {
+    const regs = Datos.estado.registros.filter((r) => r.payload.usuario.id === u.id && diaDe(r.registrado_en) >= desde);
+    const c = { tarea: 0, descarga: 0, exhumacion: 0, inhumacion: 0 };
+    regs.forEach((r) => c[clasificar(r)]++);
+    const fotos = regs.reduce((n, r) => n + (r.payload.datos.fotos_sha256?.length || 0), 0);
+    const dias = new Set(regs.map((r) => diaDe(r.registrado_en))).size;
+    const ultimo = regs.length ? regs[regs.length - 1].registrado_en : null;
+    return { u, total: regs.length, c, fotos, dias, ultimo };
+  }).filter((x) => x.u.activo !== false || x.total > 0)
+    .sort((a, b) => b.total - a.total || a.u.nombre.localeCompare(b.u.nombre));
+}
+
+function vistaCapataces() {
+  if (UI.usuario?.rol !== "directivo") return '<div class="card vacio">Esta sección la ve solo el Director.</div>';
+  const periodo = UI.periodoRanking || "30";
+  const ranking = rankingCapataces(periodo);
+  const max = Math.max(1, ...ranking.map((x) => x.total));
+  const medalla = (i, total) => (total ? ["🥇", "🥈", "🥉"][i] || `${i + 1}°` : "—");
+  const btn = ([id, txt]) => `<button type="button" class="opcion" style="min-height:auto" data-periodo="${id}" aria-pressed="${periodo === id}">${txt}</button>`;
+  const capataces = Datos.estado.usuarios.filter((u) => u.rol === "capataz");
+  return `<h1>Capataces</h1>
+    <h2>Ranking de trabajo</h2>
+    <p class="muted chico">Cuenta los trabajos firmados por cada capataz: tareas de mantenimiento, descargas, exhumaciones e inhumaciones.</p>
+    <div class="fila" style="margin-bottom:12px">${PERIODOS.map(btn).join("")}</div>
+    ${ranking.length ? `<div class="lista-alertas">${ranking.map((x, i) => `<div class="card ranking ${i === 0 && x.total ? "primero" : ""}">
+        <div class="ranking-fila"><span class="puesto">${medalla(i, x.total)}</span>
+          <div class="ranking-nombre"><strong>${esc(x.u.nombre)}</strong>${x.u.activo === false ? ' <span class="chip advertencia">Inactivo</span>' : ""}<div class="muted chico">Legajo ${esc(x.u.legajo)}${x.ultimo ? " · último trabajo " + fmtFecha(x.ultimo) : ""}</div></div>
+          <div class="total"><strong>${x.total}</strong><span class="muted chico">trabajos</span></div></div>
+        <div class="barra-umbral"><span style="width:${(x.total / max) * 100}%;background:var(--primary)"></span></div>
+        <div class="muted chico">Tareas ${x.c.tarea} · Descargas ${x.c.descarga} · Exhumaciones ${x.c.exhumacion} · Inhumaciones ${x.c.inhumacion} · Fotos ${x.fotos} · Días trabajados ${x.dias}</div>
+      </div>`).join("")}</div>` : '<div class="card vacio">Todavía no hay capataces.</div>'}
+
+    <h2>Administrar capataces</h2>
+    <p class="muted chico">Cada capataz entra con su nombre y su PIN. El PIN no se muestra nunca: si alguien se lo olvida, le asignás uno nuevo.</p>
+    <div class="tabla-scroll"><table>
+      <thead><tr><th>Nombre</th><th>Legajo</th><th>Estado</th><th></th></tr></thead>
+      <tbody>${capataces.map((u) => `<tr>
+        <td><strong>${esc(u.nombre)}</strong></td><td>${esc(u.legajo)}</td>
+        <td>${u.activo === false ? '<span class="chip advertencia">Inactivo</span>' : '<span class="chip ok">Activo</span>'}</td>
+        <td><div class="fila"><button class="btn sec" type="button" data-editar-capataz="${u.id}" style="min-height:36px;padding:4px 12px">Editar</button>
+          <button class="btn sec" type="button" data-activar-capataz="${u.id}" style="min-height:36px;padding:4px 12px">${u.activo === false ? "Activar" : "Desactivar"}</button></div></td>
+      </tr>`).join("")}</tbody></table></div>
+
+    <h3 style="margin-top:16px">Agregar capataz</h3>
+    <form class="form card" data-form="nuevo-capataz">
+      <label>Nombre y apellido<input name="nombre" required maxlength="80" autocomplete="off" placeholder="Ej.: Juan Pérez"></label>
+      <label>Legajo<input name="legajo" required maxlength="20" autocomplete="off" placeholder="Ej.: C-103"></label>
+      <div class="dos-col">
+        <label>PIN <span class="muted">(4 a 8 números)</span><input name="pin" type="password" inputmode="numeric" required minlength="4" maxlength="8" autocomplete="new-password"></label>
+        <label>Repetir PIN<input name="pin2" type="password" inputmode="numeric" required minlength="4" maxlength="8" autocomplete="new-password"></label>
+      </div>
+      <button class="btn" type="submit">Agregar capataz</button>
+    </form>`;
+}
+
+function editarCapataz(id) {
+  const u = Datos.estado.usuarios.find((x) => x.id === id);
+  if (!u) return;
+  abrirModal(`<h2 style="margin-top:0">Editar capataz</h2>
+    <form class="form" data-form="editar-capataz" data-id="${u.id}">
+      <label>Nombre y apellido<input name="nombre" required maxlength="80" value="${esc(u.nombre)}" autocomplete="off"></label>
+      <label>Legajo<input name="legajo" required maxlength="20" value="${esc(u.legajo)}" autocomplete="off"></label>
+      <div class="dos-col">
+        <label>PIN nuevo <span class="muted">(dejar vacío para no cambiarlo)</span><input name="pin" type="password" inputmode="numeric" minlength="4" maxlength="8" autocomplete="new-password"></label>
+        <label>Repetir PIN nuevo<input name="pin2" type="password" inputmode="numeric" minlength="4" maxlength="8" autocomplete="new-password"></label>
+      </div>
+      <p class="muted chico">Los trabajos ya firmados conservan el nombre con el que se firmaron.</p>
+      <div class="fila"><button class="btn" type="submit">Guardar</button><button class="btn sec" type="button" data-accion="cerrar">Cancelar</button></div>
+    </form>`);
+}
+
+// Valida nombre, legajo y PIN; devuelve un mensaje de error o null.
+function validarCapataz(f, idActual, pinObligatorio) {
+  const nombre = f.nombre.value.trim(), legajo = f.legajo.value.trim();
+  if (nombre.length < 3) return "Escribí el nombre y apellido.";
+  if (!legajo) return "Escribí el legajo.";
+  if (Datos.estado.usuarios.some((u) => u.id !== idActual && u.legajo.toLowerCase() === legajo.toLowerCase())) return "Ya hay otra persona con ese legajo.";
+  if (Datos.estado.usuarios.some((u) => u.id !== idActual && u.nombre.toLowerCase() === nombre.toLowerCase())) return "Ya hay otra persona con ese nombre.";
+  const pin = f.pin.value;
+  if (pinObligatorio || pin) {
+    if (!/^\d{4,8}$/.test(pin)) return "El PIN tiene que tener entre 4 y 8 números.";
+    if (pin !== f.pin2.value) return "Los dos PIN no coinciden.";
+  }
+  return null;
 }
 
 /* ───────────────────────── Informe diario (solo Director) ───────────────────────── */
@@ -1251,6 +1351,16 @@ document.addEventListener("click", async (ev) => {
     return;
   }
   if (d.dia) { UI.diaInforme = d.dia; render(); return; }
+  if (d.periodo) { UI.periodoRanking = d.periodo; render(); return; }
+  if (d.editarCapataz) { editarCapataz(d.editarCapataz); return; }
+  if (d.activarCapataz) {
+    const u = Datos.estado.usuarios.find((x) => x.id === d.activarCapataz);
+    if (u && (u.activo === false || confirm(`¿Desactivar a ${u.nombre}? No va a poder ingresar. Sus trabajos quedan registrados.`))) {
+      u.activo = u.activo === false;
+      Datos.guardar(); render(); avisar(u.activo ? `${u.nombre} puede volver a ingresar.` : `${u.nombre} ya no puede ingresar.`);
+    }
+    return;
+  }
   if (d.filtroDisp) { UI.filtroDisp.tipo = d.filtroDisp; render(); return; }
   if (d.verDisp) {
     const [tipo, tam] = d.verDisp.split("|");
@@ -1324,7 +1434,7 @@ document.addEventListener("submit", async (ev) => {
   const tipoForm = form.dataset.form;
   try {
     if (tipoForm === "login") {
-      const u = Datos.estado.usuarios.find((x) => x.id === f.usuario.value);
+      const u = Datos.estado.usuarios.find((x) => x.id === f.usuario.value && x.activo !== false);
       if (!u || (await sha256("pin:" + f.pin.value)) !== u.pin) { avisar("El PIN no es correcto."); f.pin.value = ""; f.pin.focus(); return; }
       UI.usuario = u; UI.pestana = null; $("#toast").hidden = true;
       try { localStorage.setItem(CLAVE_SESION, u.id); } catch { /* sin almacenamiento */ }
@@ -1429,6 +1539,22 @@ document.addEventListener("submit", async (ev) => {
           <button class="btn sec" type="button" data-registro="${reg.secuencia}">Ver comprobante</button>
           <button class="btn sec" type="button" data-pestana="resumen">Ir al Resumen</button>
         </div></div>`);
+    } else if (tipoForm === "nuevo-capataz" || tipoForm === "editar-capataz") {
+      if (UI.usuario?.rol !== "directivo") return;
+      const nuevo = tipoForm === "nuevo-capataz";
+      const id = nuevo ? null : form.dataset.id;
+      const error = validarCapataz(f, id, nuevo);
+      if (error) { avisar(error); return; }
+      const datos = { nombre: f.nombre.value.trim(), legajo: f.legajo.value.trim() };
+      if (f.pin.value) datos.pin = await sha256("pin:" + f.pin.value);
+      if (nuevo) {
+        Datos.estado.usuarios.push({ id: "u-cap-" + uuid().slice(0, 8), rol: "capataz", activo: true, zonas: Datos.estado.zonas.map((z) => z.id), ...datos });
+      } else {
+        Object.assign(Datos.estado.usuarios.find((u) => u.id === id), datos);
+        cerrarModal();
+      }
+      Datos.guardar(); render();
+      avisar(nuevo ? `${datos.nombre} ya puede ingresar con su PIN.` : "Cambios guardados.");
     } else if (tipoForm === "ajustes") {
       const e = Datos.estado;
       const nuevosU = {};
@@ -1498,7 +1624,7 @@ async function revisarVersion() {
   await Datos.cargar();
   let id = null;
   try { id = localStorage.getItem(CLAVE_SESION); } catch { /* sin almacenamiento */ }
-  UI.usuario = Datos.estado.usuarios.find((u) => u.id === id) || null;
+  UI.usuario = Datos.estado.usuarios.find((u) => u.id === id && u.activo !== false) || null;
   render();
   setInterval(() => { if (UI.usuario && $("#modal").hidden && !document.activeElement?.closest?.("form")) render(); }, 60000);
 })();

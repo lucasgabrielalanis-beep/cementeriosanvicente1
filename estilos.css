@@ -220,3 +220,11 @@ label.btn { width: fit-content; }
   .vista { max-width: none; padding: 0; }
   .card, .tabla-scroll { box-shadow: none; break-inside: avoid; }
 }
+
+/* Ranking de capataces */
+.ranking-fila { display: flex; align-items: center; gap: 10px; }
+.ranking-nombre { flex: 1; min-width: 0; }
+.ranking .puesto { font-size: 1.6rem; min-width: 2.2rem; text-align: center; flex: none; }
+.ranking .total { text-align: right; line-height: 1.1; flex: none; }
+.ranking .total strong { display: block; font-size: 1.6rem; }
+.ranking.primero { border-color: var(--amarillo-dot); box-shadow: 0 0 0 2px var(--amarillo-bg); }
