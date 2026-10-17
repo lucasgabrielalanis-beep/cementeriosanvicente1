@@ -98,6 +98,7 @@ erDiagram
 | `auditoria_eventos` | Bitácora general encadenada por hash de altas/bajas/cambios en tablas sensibles. **Inmutable.** |
 | `reglas_mantenimiento` / `temporadas_climaticas` | Plazos del semáforo y factor de temporada de lluvias. |
 | `umbrales_stock` / `alertas` | Umbrales configurables de faltante y alertas abiertas/resueltas (sin duplicados). |
+| `reclamos` / `reclamos_seguimiento` | Reclamos de contribuyentes (motivo, zona, detalle, estado pendiente → en proceso → resuelto) y su historial; al resolver se exige qué se hizo. El Director ve el informe (por período, motivo, zona, demorados de 7 días o más y días promedio de resolución). |
 
 ---
 

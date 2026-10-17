@@ -216,6 +216,8 @@ label.btn { width: fit-content; }
 .kpis { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
 .kpi .numero { font-size: 1.8rem; font-weight: 700; line-height: 1.1; }
 .kpi.ok .numero { color: var(--verde); }
+.kpi.critica { background: var(--card); }
+.kpi.critica .numero { color: var(--rojo); }
 .dia-actual td { background: var(--soft); font-weight: 600; }
 .informe-cabecera { align-items: flex-end; }
 @media print {
@@ -232,3 +234,15 @@ label.btn { width: fit-content; }
 .ranking .total { text-align: right; line-height: 1.1; flex: none; }
 .ranking .total strong { display: block; font-size: 1.6rem; }
 .ranking.primero { border-color: var(--amarillo-dot); box-shadow: 0 0 0 2px var(--amarillo-bg); }
+
+/* Reclamos de contribuyentes */
+.conteo + .conteo { margin-top: 8px; }
+.conteo .barra-umbral { margin: 2px 0 0; height: 6px; }
+tr.demorado td:first-child { box-shadow: inset 4px 0 0 var(--rojo); }
+.detalle-reclamo { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0 0 12px; }
+.detalle-reclamo dt { font-weight: 600; }
+.detalle-reclamo dd { margin: 0; }
+.historial { margin: 0 0 12px; padding-left: 18px; }
+.historial li + li { margin-top: 6px; }
+.solo-imprimir { display: none; }
+@media print { .solo-imprimir { display: block; } }

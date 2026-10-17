@@ -423,6 +423,36 @@ CREATE TABLE alertas (
 CREATE UNIQUE INDEX uq_alerta_abierta ON alertas(clave) WHERE resuelta_en IS NULL;
 CREATE INDEX idx_alertas_abiertas ON alertas(nivel, creada_en DESC) WHERE resuelta_en IS NULL;
 
+-- 8 bis. Reclamos de contribuyentes ----------------------------------------------
+-- Los carga quien atiende al contribuyente; se siguen hasta resolverlos. El Director ve el informe.
+CREATE TYPE motivo_reclamo AS ENUM ('limpieza', 'pasto', 'deterioro', 'filtraciones', 'robo', 'ubicacion', 'atencion', 'seguridad', 'otro');
+CREATE TYPE estado_reclamo AS ENUM ('pendiente', 'en_proceso', 'resuelto');
+CREATE TABLE reclamos (
+  id               BIGSERIAL PRIMARY KEY,                -- es el N° de reclamo
+  recibido_en      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  contribuyente    TEXT NOT NULL,
+  telefono         TEXT,
+  motivo           motivo_reclamo NOT NULL,
+  zona_id          SMALLINT REFERENCES zonas(id),
+  ubicacion        TEXT,
+  detalle          TEXT NOT NULL,
+  estado           estado_reclamo NOT NULL DEFAULT 'pendiente',
+  resuelto_en      TIMESTAMPTZ,
+  registrado_por   UUID NOT NULL REFERENCES usuarios(id),
+  CONSTRAINT resuelto_con_fecha CHECK ((estado = 'resuelto') = (resuelto_en IS NOT NULL))
+);
+CREATE INDEX idx_reclamos_abiertos ON reclamos(recibido_en) WHERE estado <> 'resuelto';
+CREATE TABLE reclamos_seguimiento (
+  id               BIGSERIAL PRIMARY KEY,
+  reclamo_id       BIGINT NOT NULL REFERENCES reclamos(id),
+  estado           estado_reclamo NOT NULL,
+  nota             TEXT,                                 -- qué se hizo / respuesta (obligatoria al resolver)
+  usuario_id       UUID NOT NULL REFERENCES usuarios(id),
+  creado_en        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT resuelto_con_nota CHECK (estado <> 'resuelto' OR length(trim(nota)) > 0)
+);
+CREATE INDEX idx_reclamos_seguimiento ON reclamos_seguimiento(reclamo_id, creado_en);
+
 -- 9. Vistas -------------------------------------------------------------------
 -- Factor climático vigente hoy (1.00 si no hay temporada activa).
 CREATE OR REPLACE FUNCTION factor_climatico(p_fecha DATE DEFAULT current_date)
